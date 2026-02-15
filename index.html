@@ -378,7 +378,37 @@
     geojsonBox.value = text;
 
     // 2) сохраняем в localStorage
-    localStorage.setItem(ZONES_KEY, JSON.stringify(gj));
+   document.getElementById("btnExport").onclick = () => {
+  try {
+    const gj = zonesGroup.toGeoJSON();
+    const text = JSON.stringify(gj, null, 2);
+
+    // 1) заполняем поле
+    geojsonBox.value = text;
+
+    // 2) сохраняем в localStorage (в ключ текущего проекта)
+    localStorage.setItem(zonesKey(), JSON.stringify(gj));
+
+    // 3) скачиваем файл
+    const blob = new Blob([text], { type: "application/geo+json;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "zones.geojson";
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+
+    setTimeout(() => URL.revokeObjectURL(url), 500);
+
+    showToast("GeoJSON экспортирован");
+  } catch (e) {
+    console.error(e);
+    alert("Экспорт не сработал. Открой консоль (F12) и пришли ошибку.");
+  }
+};
+
 
     // 3) скачиваем файл
     const blob = new Blob([text], { type: "application/geo+json;charset=utf-8" });
