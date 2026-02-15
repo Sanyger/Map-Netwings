@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Теплокарта (слои + зоны + непрерывное рисование)</title>
+  <title>NEtwings — Трафарет + проекты + привязка (2 точки) + линии фасада</title>
 
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
@@ -26,85 +26,109 @@
     .btn + .btn { margin-top: 8px; }
 
     input[type="range"] { width:100%; }
-    input[type="text"] { width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; font-size:13px; }
-    textarea { width:100%; height: 180px; border:1px solid #ddd; border-radius:10px; padding:10px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; }
+    input[type="text"], select { width:100%; padding:10px; border:1px solid #ddd; border-radius:10px; font-size:13px; background:#fff; }
+    textarea { width:100%; height: 150px; border:1px solid #ddd; border-radius:10px; padding:10px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 12px; }
 
-    #layersList { max-height: 520px; overflow-y: auto; padding-right: 6px; }
+    #layersList { max-height: 320px; overflow-y: auto; padding-right: 6px; }
 
     .layerItem { background:#fff; border: 1px solid #e8e8e8; border-radius: 12px; padding: 10px; margin-bottom: 10px; cursor: pointer; transition: 0.15s; }
     .layerItem:hover { border-color:#cfcfcf; }
     .layerItem.active { border: 2px solid #ff7a00; background: #fff5ea; }
-
     .layerTop { display:flex; align-items:center; justify-content:space-between; gap: 10px; margin-bottom: 8px; }
     .layerName { font-weight: 900; font-size: 13px; }
     .pill { font-size: 11px; padding: 4px 8px; border-radius: 999px; border:1px solid #ddd; background:#fafafa; color:#555; white-space: nowrap; }
 
     .row { display:flex; gap: 8px; flex-wrap: wrap; }
-    .mini { padding: 8px 10px; border-radius: 10px; border:1px solid #ddd; background:#fff; cursor:pointer; font-weight: 800; font-size: 12px; flex: 1 1 auto; text-align: center; }
-    .mini.ok { border-color:#1a7f37; color:#1a7f37; }
+    .mini { padding: 8px 10px; border-radius: 10px; border:2px solid #ddd; background:#fff; cursor:pointer; font-weight: 900; font-size: 12px; flex: 1 1 auto; text-align: center; }
+    .mini.primary { border-color:#2f6fed; color:#2f6fed; }
     .mini.danger { border-color:#e5484d; color:#e5484d; }
+    .mini.ok { border-color:#1a7f37; color:#1a7f37; }
+    .mini.active { outline: 2px solid #111; }
 
     .zones { display:flex; gap:8px; flex-wrap: wrap; }
     .zonebtn { flex:1 1 46%; border-radius: 10px; padding: 10px; border:2px solid #ddd; cursor:pointer; font-weight: 900; background:#fff; }
     .zonebtn.active { outline: 2px solid #111; }
 
-    .result { background:#fff; border:1px solid #eee; border-radius: 10px; padding: 10px; font-size: 12px; line-height: 1.45; }
-
     .toast { position: fixed; left: 12px; bottom: 12px; z-index: 999999; background: rgba(20,20,20,0.92); color: #fff;
-      padding: 10px 12px; border-radius: 12px; font-size: 12px; display:none; max-width: 560px; }
+      padding: 10px 12px; border-radius: 12px; font-size: 12px; display:none; max-width: 680px; }
 
-    .kbdBox { display:grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 10px; align-items: center; }
-    .kbdBtn { padding: 10px; border: 1px solid #ddd; border-radius: 10px; background: #fff; cursor: pointer; font-weight: 900; text-align: center; user-select: none; }
-    .kbdBtn:active { transform: translateY(1px); }
-
-    .hint { margin-top: 8px; font-size: 12px; color: #444; background: #fff; border: 1px solid #eee; border-radius: 10px; padding: 10px; line-height: 1.4; }
-    code { background:#f3f3f3; padding: 2px 6px; border-radius: 6px; }
     .warn { background:#fff2f2; border:1px solid #ffd1d1; color:#8a1f1f; padding:10px; border-radius:10px; font-size:12px; margin-top:10px; display:none; }
+
+    /* Calibration modal */
+    #calModal { display:none; position:fixed; inset:0; background:rgba(0,0,0,.55); z-index:999999; }
+    #calBox { max-width:1100px; margin:18px auto; background:#fff; border-radius:14px; padding:14px; }
+    .calTop { display:flex; justify-content:space-between; gap:10px; align-items:center; }
+    #calViewport { margin-top:10px; border:1px solid #eee; border-radius:12px; overflow:hidden; height:74vh; background:#f7f7f7; }
+    #calStage { width:100%; height:100%; position:relative; touch-action:none; cursor:grab; }
+    #calImg { position:absolute; left:0; top:0; transform-origin:0 0; user-select:none; -webkit-user-drag:none; }
+
+    /* markers on screen */
+    .calMark {
+      position:absolute;
+      width: 14px; height: 14px;
+      border-radius: 999px;
+      border: 3px solid #111;
+      background: rgba(255,255,255,0.9);
+      transform: translate(-50%, -50%);
+      pointer-events:none;
+      display:none;
+      z-index: 10;
+    }
+    .calMark.red { border-color:#ff2d2d; }
+    .calMark.blue { border-color:#2f6fed; }
+    .calMarkLabel {
+      position:absolute;
+      transform: translate(10px, -14px);
+      font-size: 12px;
+      font-weight: 900;
+      color:#111;
+      background: rgba(255,255,255,0.85);
+      padding: 2px 6px;
+      border-radius: 8px;
+      border:1px solid #eee;
+      pointer-events:none;
+      white-space:nowrap;
+    }
   </style>
 </head>
 <body>
 
 <div id="app">
   <div id="sidebar">
-    <h1>Теплокарта (слои + зоны)</h1>
+    <h1>Трафарет → привязка → фасады</h1>
     <div class="muted">
-      • Новый слой добавляется <b>разфиксированным</b> (двигай сразу).<br>
-      • Рисование включается/выключается только кнопками проходимости или <b>Esc</b>.<br>
-      • Удаление зоны: <b>ПКМ</b> по зоне → подтверждение → удалить.<br>
-      • Импорт зон: вставь GeoJSON в поле и нажми <b>Импорт</b>.
+      • Проекты = разные наборы слоёв (Проходимость / Плотность населения / …)<br>
+      • Трафарет двигаем только привязкой (2 точки).<br>
+      • Удалить зону: Shift+клик или ПКМ по зоне.
     </div>
     <div id="protoWarn" class="warn"></div>
 
     <div class="card">
-      <div class="label">Слои (скрины)</div>
-      <button class="btn primary" id="btnAddLayers">🖼 Добавить скрин(ы)</button>
-      <input id="imgFiles" type="file" accept="image/*" multiple style="display:none">
-      <div style="margin-top:10px" id="layersList"></div>
-
-      <div class="label" style="margin-top:14px">Движение активного слоя</div>
-      <div class="kbdBox">
-        <button class="kbdBtn" id="btnScaleUp" title="Увеличить картинку">＋</button>
-        <button class="kbdBtn" id="btnUp">↑</button>
-        <button class="kbdBtn" id="btnScaleDown" title="Уменьшить картинку">－</button>
-
-        <button class="kbdBtn" id="btnLeft">←</button>
-        <button class="kbdBtn" id="btnFit">⛶</button>
-        <button class="kbdBtn" id="btnRight">→</button>
-
-        <div></div>
-        <button class="kbdBtn" id="btnDown">↓</button>
-        <div></div>
+      <div class="label">Проекты (наборы слоёв)</div>
+      <select id="projectSelect"></select>
+      <div class="row" style="margin-top:10px">
+        <button class="mini primary" id="projNew">＋ Новый</button>
+        <button class="mini" id="projRename">✏️ Переименовать</button>
+        <button class="mini danger" id="projDelete">🗑 Удалить</button>
       </div>
-
-      <div class="hint">
-        Шаг движения: <b>5м</b> (Alt=1м, Shift=20м, Ctrl/⌘=50м).<br>
-        <b>＋/－</b> — масштаб картинки. <b>⛶</b> — растянуть слой на экран.<br>
-        Двигать/масштабировать можно только если слой <b>разфиксирован</b>.
+      <div class="small" style="margin-top:8px">
+        Пример: «Проходимость», «Плотность населения», «Ресторанные улицы».
       </div>
     </div>
 
     <div class="card">
-      <div class="label">Проходимость (режим рисования)</div>
+      <div class="label">Трафареты (скрины)</div>
+      <button class="btn primary" id="btnAddLayers">🖼 Добавить скрин(ы)</button>
+      <input id="imgFiles" type="file" accept="image/*" multiple style="display:none">
+      <div style="margin-top:10px" id="layersList"></div>
+      <div class="small" style="margin-top:8px">
+        Движение/масштаб трафарета на карте отключены — только привязка по 2 точкам.
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="label">Проходимость (уровень)</div>
       <div class="zones">
         <button class="zonebtn" id="zGreat"  style="border-color:#ff2d2d;">🔴 1000+ /ч</button>
         <button class="zonebtn" id="zNormal" style="border-color:#ff8a00;">🟠 500–1000 /ч</button>
@@ -112,30 +136,34 @@
         <button class="zonebtn" id="zLow"    style="border-color:#39c16c;">🟢 0–100 /ч</button>
       </div>
       <div class="small" style="margin-top:8px">
-        Буфер (ширина полосы) = <b>30м</b> для всех уровней. Выйти из рисования: <b>Esc</b> или повторно нажми активную кнопку уровня.
-      </div>
-      <div class="small" style="margin-top:8px">
-        Сейчас: <b id="drawState">Рисование выключено</b>
+        Сейчас: <b id="stateLine">выключено</b>
       </div>
     </div>
 
     <div class="card">
-      <div class="label">Проверка координат</div>
-      <input id="coordsInput" type="text" placeholder="lat,lng или lng,lat или <coords>..</coords>">
-      <button class="btn" id="btnCheckCoords" style="margin-top:10px">🔎 Проверить</button>
-      <div id="coordsResult" class="result" style="margin-top:10px"></div>
+      <div class="label">Линии фасада (одна сторона)</div>
+      <div class="row">
+        <button class="mini ok active" id="sideLeft">⬅️ Слева по ходу</button>
+        <button class="mini ok" id="sideRight">➡️ Справа по ходу</button>
+        <button class="mini primary" id="btnFlip">🔁 Flip</button>
+      </div>
+
+      <div style="margin-top:10px">
+        <div class="small">Ширина захвата фасада (м)</div>
+        <input id="streetWidth" type="text" value="15">
+      </div>
+
+      <button class="btn primary" id="btnStreetMode" style="margin-top:10px">🖊 Включить линии фасада</button>
+      <div class="small" style="margin-top:8px">Рисование продолжается, пока не нажмёшь Esc или не выключишь кнопку.</div>
     </div>
 
     <div class="card">
       <div class="label">Экспорт / импорт зон (GeoJSON)</div>
       <div class="row">
-        <button class="btn" id="btnExport">⬇️ Экспорт GeoJSON</button>
-        <button class="btn" id="btnImport">⬆️ Импорт GeoJSON</button>
+        <button class="btn" id="btnExport">⬇️ Экспорт</button>
+        <button class="btn" id="btnImport">⬆️ Импорт</button>
       </div>
       <textarea id="geojsonBox" spellcheck="false" style="margin-top:10px"></textarea>
-      <div class="small" style="margin-top:8px">
-        Импорт заменит текущие зоны.
-      </div>
     </div>
   </div>
 
@@ -144,216 +172,162 @@
 
 <div id="toast" class="toast"></div>
 
+<!-- Calibration modal -->
+<div id="calModal">
+  <div id="calBox">
+    <div class="calTop">
+      <div style="font-weight:900">🎯 Привязка: отметь точки на скрине</div>
+      <button id="calClose" class="btn" style="width:auto">Закрыть</button>
+    </div>
+    <div class="small" id="calHint" style="margin-top:8px"></div>
+
+    <div class="row" style="margin-top:10px">
+      <button id="calZoomIn" class="mini primary" style="flex:0 0 auto;">＋</button>
+      <button id="calZoomOut" class="mini primary" style="flex:0 0 auto;">－</button>
+      <button id="calZoomFit" class="mini" style="flex:0 0 auto;">Вписать</button>
+      <div class="small" style="align-self:center;">Колёсико: zoom • перетаскивание: pan • клик: поставить точку</div>
+    </div>
+
+    <div id="calViewport">
+      <div id="calStage">
+        <img id="calImg" />
+        <div id="markA" class="calMark blue"><div class="calMarkLabel">A</div></div>
+        <div id="markB" class="calMark red"><div class="calMarkLabel">B</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
 
 <script>
-  // =====================
-  // Warning for file://
-  // =====================
+  // ========= file:// warning =========
   const protoWarn = document.getElementById("protoWarn");
   if (location.protocol === "file:") {
     protoWarn.style.display = "block";
     protoWarn.innerHTML = `
-      Ты открыл страницу как <b>file://</b>. На некоторых Mac/Safari сохранение (IndexedDB/localStorage) бывает нестабильно.<br>
-      Запускай так: <code>python3 -m http.server 8080</code> и открывай <code>http://localhost:8080/zones-map.html</code>.
+      Открыто как <b>file://</b> — IndexedDB может работать нестабильно.<br>
+      Запусти: <code>python3 -m http.server 8080</code> → открой <code>http://localhost:8080/stencil-map.html</code>.
     `;
   }
 
-  // =====================
-  // Toast
-  // =====================
+  // ========= Toast =========
   const toast = document.getElementById('toast');
   let toastTimer = null;
-  function showToast(text, ms=1400) {
+  function showToast(text, ms=1600) {
     toast.textContent = text;
     toast.style.display = 'block';
     if (toastTimer) clearTimeout(toastTimer);
     toastTimer = setTimeout(() => toast.style.display = 'none', ms);
   }
 
-  // =====================
-  // Map
-  // =====================
+  // ========= Map =========
   const map = L.map('map').setView([59.9386, 30.3141], 12);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 20 }).addTo(map);
+  map.getContainer().addEventListener("contextmenu", (e) => e.preventDefault());
 
-  // =====================
-  // IndexedDB (images)
-  // =====================
-  const DB_NAME = "netwings_heat_db_v3";
-  const DB_STORE = "layers";
-  function openDB() {
-    return new Promise((resolve, reject) => {
-      const req = indexedDB.open(DB_NAME, 1);
-      req.onupgradeneeded = () => {
-        const db = req.result;
-        if (!db.objectStoreNames.contains(DB_STORE)) db.createObjectStore(DB_STORE, { keyPath: "id" });
-      };
-      req.onsuccess = () => resolve(req.result);
-      req.onerror = () => reject(req.error);
-    });
+  // ========= Projects =========
+  const PROJECTS_KEY = "netwings_projects_v1";
+  const ACTIVE_PROJECT_KEY = "netwings_active_project_v1";
+  const projectSelect = document.getElementById("projectSelect");
+
+  function genId() { return "id_" + Math.random().toString(16).slice(2) + Date.now().toString(16); }
+
+  function loadProjects() {
+    let p = [];
+    try { p = JSON.parse(localStorage.getItem(PROJECTS_KEY) || "[]"); } catch(e) {}
+    if (!p.length) {
+      p = [{ id: genId(), name: "Проходимость" }];
+      localStorage.setItem(PROJECTS_KEY, JSON.stringify(p));
+      localStorage.setItem(ACTIVE_PROJECT_KEY, p[0].id);
+    }
+    return p;
   }
-  async function idbPutLayer(id, dataUrl) {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(DB_STORE, "readwrite");
-      tx.objectStore(DB_STORE).put({ id, dataUrl });
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => reject(tx.error);
+  function saveProjects(list) { localStorage.setItem(PROJECTS_KEY, JSON.stringify(list)); }
+
+  let projects = loadProjects();
+  let activeProjectId = localStorage.getItem(ACTIVE_PROJECT_KEY) || projects[0].id;
+
+  function renderProjectSelect() {
+    projectSelect.innerHTML = "";
+    projects.forEach(pr => {
+      const opt = document.createElement("option");
+      opt.value = pr.id;
+      opt.textContent = pr.name;
+      projectSelect.appendChild(opt);
     });
-  }
-  async function idbGetLayer(id) {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(DB_STORE, "readonly");
-      const req = tx.objectStore(DB_STORE).get(id);
-      req.onsuccess = () => resolve(req.result?.dataUrl || null);
-      req.onerror = () => reject(req.error);
-    });
-  }
-  async function idbDeleteLayer(id) {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(DB_STORE, "readwrite");
-      tx.objectStore(DB_STORE).delete(id);
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => reject(tx.error);
-    });
+    projectSelect.value = activeProjectId;
   }
 
-  // =====================
-  // Persist keys
-  // =====================
-  const META_KEY   = "netwings_heat_layers_meta_v3";
-  const ACTIVE_KEY = "netwings_heat_layers_active_v3";
-  const ZONES_KEY  = "netwings_heat_zones_geojson_v2";
+  function setActiveProject(pid) {
+    activeProjectId = pid;
+    localStorage.setItem(ACTIVE_PROJECT_KEY, pid);
+    unloadAllLayersFromMap();
+    zonesGroup.clearLayers();
+    loadZones();
+    updateGeo();
+    loadLayers().then(() => showToast("Проект переключён"));
+  }
 
-  // =====================
-  // Zones config
-  // =====================
+  document.getElementById("projNew").onclick = () => {
+    const name = prompt("Название проекта:", "Новый проект");
+    if (!name) return;
+    const pr = { id: genId(), name: name.trim() };
+    projects.unshift(pr);
+    saveProjects(projects);
+    renderProjectSelect();
+    setActiveProject(pr.id);
+  };
+  document.getElementById("projRename").onclick = () => {
+    const pr = projects.find(x => x.id === activeProjectId);
+    if (!pr) return;
+    const name = prompt("Новое название:", pr.name);
+    if (!name) return;
+    pr.name = name.trim();
+    saveProjects(projects);
+    renderProjectSelect();
+  };
+  document.getElementById("projDelete").onclick = () => {
+    if (projects.length <= 1) { alert("Нельзя удалить последний проект."); return; }
+    const pr = projects.find(x => x.id === activeProjectId);
+    if (!pr) return;
+    if (!confirm(`Удалить проект "${pr.name}"? (зоны и трафареты тоже удалятся)`)) return;
+
+    try { localStorage.removeItem(zonesKey()); } catch(e) {}
+    try { localStorage.removeItem(metaKey()); } catch(e) {}
+    try { localStorage.removeItem(activeKey()); } catch(e) {}
+
+    deleteProjectImages(activeProjectId).finally(() => {
+      projects = projects.filter(x => x.id !== activeProjectId);
+      saveProjects(projects);
+      activeProjectId = projects[0].id;
+      localStorage.setItem(ACTIVE_PROJECT_KEY, activeProjectId);
+      renderProjectSelect();
+      setActiveProject(activeProjectId);
+    });
+  };
+
+  projectSelect.onchange = (e) => setActiveProject(e.target.value);
+  renderProjectSelect();
+
+  // ========= Zones =========
+  function zonesKey(){ return `netwings_zones_geojson_v5__${activeProjectId}`; }
+  const geojsonBox = document.getElementById("geojsonBox");
+
   const ZONES = {
     great:  { label: "1000+/ч",    score: 100, color: "#ff2d2d" },
     normal: { label: "500–1000/ч", score: 70,  color: "#ff8a00" },
     medium: { label: "100–500/ч",  score: 40,  color: "#ffd400" },
     low:    { label: "0–100/ч",    score: 10,  color: "#39c16c" }
   };
-  const BUFFER_M = 30;
 
-  let activeZoneKey = null;   // null = рисование выключено
-  const drawState = document.getElementById("drawState");
+  let activeZoneKey = null;
 
-  // =====================
-  // Zones layer group
-  // =====================
   const zonesGroup = new L.FeatureGroup().addTo(map);
-
-  // Edit toolbar only (без draw кнопок — рисуем сами через zone-кнопки)
-  const editOnly = new L.Control.Draw({
-    edit: { featureGroup: zonesGroup },
-    draw: false
-  });
+  const editOnly = new L.Control.Draw({ edit: { featureGroup: zonesGroup }, draw: false });
   map.addControl(editOnly);
-
-  // =====================
-  // Continuous Polyline drawer
-  // =====================
-  let polyDrawer = null;
-
-  function makeProps(typeKey) {
-    const z = ZONES[typeKey];
-    return { zone_type: typeKey, zone_label: z.label, zone_score: z.score, buffer_m: BUFFER_M };
-  }
-
-  function setDrawStateText() {
-    if (!activeZoneKey) {
-      drawState.textContent = "Рисование выключено";
-    } else {
-      drawState.textContent = `Рисование включено: ${ZONES[activeZoneKey].label}`;
-    }
-  }
-
-  function disableDrawing() {
-    try { if (polyDrawer) polyDrawer.disable(); } catch(e) {}
-  }
-
-  function enableDrawing() {
-    if (!activeZoneKey) return;
-    if (!polyDrawer) polyDrawer = new L.Draw.Polyline(map, { shapeOptions: { } });
-    try { polyDrawer.enable(); } catch(e) {}
-  }
-
-  function clearZoneButtonsUI() {
-    document.querySelectorAll(".zonebtn").forEach(b => b.classList.remove("active"));
-  }
-
-  function toggleZone(zoneKey) {
-    if (activeZoneKey === zoneKey) {
-      activeZoneKey = null;
-      clearZoneButtonsUI();
-      disableDrawing();
-      setDrawStateText();
-      showToast("Рисование выключено");
-      return;
-    }
-
-    activeZoneKey = zoneKey;
-    clearZoneButtonsUI();
-    const btnId = zoneKey === "great" ? "zGreat" :
-                  zoneKey === "normal" ? "zNormal" :
-                  zoneKey === "medium" ? "zMedium" : "zLow";
-    document.getElementById(btnId).classList.add("active");
-
-    setDrawStateText();
-    showToast(`Рисование: ${ZONES[zoneKey].label}`);
-    enableDrawing();
-  }
-
-  document.getElementById("zGreat").onclick  = () => toggleZone("great");
-  document.getElementById("zNormal").onclick = () => toggleZone("normal");
-  document.getElementById("zMedium").onclick = () => toggleZone("medium");
-  document.getElementById("zLow").onclick    = () => toggleZone("low");
-
-  window.addEventListener("keydown", (ev) => {
-    if (ev.key === "Escape") {
-      ev.preventDefault();
-      activeZoneKey = null;
-      clearZoneButtonsUI();
-      disableDrawing();
-      setDrawStateText();
-      showToast("Рисование выключено (Esc)");
-    }
-  }, { passive:false });
-
-  // =====================
-  // Save/load zones
-  // =====================
-  const geojsonBox = document.getElementById("geojsonBox");
-
-  function saveZonesToStorage() {
-    try {
-      const gj = zonesGroup.toGeoJSON();
-      localStorage.setItem(ZONES_KEY, JSON.stringify(gj));
-    } catch(e) {}
-  }
-
-  function updateGeo() {
-    const gj = zonesGroup.toGeoJSON();
-    geojsonBox.value = JSON.stringify(gj, null, 2);
-    saveZonesToStorage();
-  }
-
-  function attachDeleteOnRightClick(layer) {
-    layer.on("contextmenu", (e) => {
-      if (e?.originalEvent) e.originalEvent.preventDefault();
-      const ok = confirm("Точно хотите удалить эту зону?");
-      if (!ok) return;
-      zonesGroup.removeLayer(layer);
-      updateGeo();
-      showToast("Зона удалена");
-    });
-  }
 
   function styleForFeature(f) {
     const t = f?.properties?.zone_type || "low";
@@ -361,89 +335,269 @@
     return { color: z.color, weight: 2, fillColor: z.color, fillOpacity: 0.18 };
   }
 
-  function addGeoJsonToZonesGroup(gj) {
-    const layer = L.geoJSON(gj, { style: styleForFeature });
-    layer.eachLayer(l => {
-      try { l.options.interactive = true; } catch(e) {}
-      attachDeleteOnRightClick(l);
-      zonesGroup.addLayer(l);
+  function attachDeleteHandlers(layer) {
+    layer.on("click", (e) => {
+      if (!e?.originalEvent?.shiftKey) return;
+      if (confirm("Удалить эту зону?")) {
+        zonesGroup.removeLayer(layer);
+        updateGeo();
+      }
+    });
+    layer.on("contextmenu", (e) => {
+      if (e?.originalEvent) { e.originalEvent.preventDefault(); e.originalEvent.stopPropagation(); }
+      if (confirm("Удалить эту зону?")) {
+        zonesGroup.removeLayer(layer);
+        updateGeo();
+      }
     });
   }
 
-  function loadZonesFromStorage() {
-    const raw = localStorage.getItem(ZONES_KEY);
+  function addGeoJsonToZonesGroup(gj) {
+    const layer = L.geoJSON(gj, { style: styleForFeature });
+    layer.eachLayer(l => { attachDeleteHandlers(l); zonesGroup.addLayer(l); });
+  }
+
+  function updateGeo() {
+    const gj = zonesGroup.toGeoJSON();
+    geojsonBox.value = JSON.stringify(gj, null, 2);
+    try { localStorage.setItem(zonesKey(), JSON.stringify(gj)); } catch(e) {}
+  }
+
+  function loadZones() {
+    const raw = localStorage.getItem(zonesKey());
     if (!raw) return;
-    try {
-      const gj = JSON.parse(raw);
-      addGeoJsonToZonesGroup(gj);
-    } catch(e) {}
+    try { addGeoJsonToZonesGroup(JSON.parse(raw)); } catch(e) {}
   }
 
   document.getElementById("btnExport").onclick = updateGeo;
-
   document.getElementById("btnImport").onclick = () => {
     let gj;
-    try {
-      gj = JSON.parse(geojsonBox.value || "");
-    } catch (e) {
-      alert("Не могу прочитать JSON. Проверь формат GeoJSON.");
-      return;
-    }
-
-    const ok = gj && (gj.type === "FeatureCollection" || gj.type === "Feature");
-    if (!ok) {
-      alert("Это не похоже на GeoJSON (FeatureCollection/Feature).");
-      return;
-    }
-
+    try { gj = JSON.parse(geojsonBox.value || ""); }
+    catch(e){ alert("Не могу прочитать JSON."); return; }
     zonesGroup.clearLayers();
     addGeoJsonToZonesGroup(gj);
     updateGeo();
-    showToast("Зоны импортированы и сохранены");
+    showToast("Импортировано");
   };
 
-  // =====================
-  // Create zones from drawn polyline (buffer)
-  // =====================
-  map.on(L.Draw.Event.CREATED, (event) => {
-    if (!activeZoneKey) {
-      try { event.layer.remove(); } catch(e) {}
+  // ========= Level buttons =========
+  function clearZoneButtonsUI() {
+    document.querySelectorAll(".zonebtn").forEach(b => b.classList.remove("active"));
+  }
+  function toggleZone(zoneKey) {
+    if (activeZoneKey === zoneKey) {
+      activeZoneKey = null;
+      clearZoneButtonsUI();
+      refreshState();
+      showToast("Уровень снят");
+      if (streetMode) enableStreetDrawing();
       return;
     }
+    activeZoneKey = zoneKey;
+    clearZoneButtonsUI();
+    const btnId = zoneKey === "great" ? "zGreat" :
+                  zoneKey === "normal" ? "zNormal" :
+                  zoneKey === "medium" ? "zMedium" : "zLow";
+    document.getElementById(btnId).classList.add("active");
+    refreshState();
+    showToast(`Уровень: ${ZONES[zoneKey].label}`);
+    if (streetMode) enableStreetDrawing();
+  }
+  document.getElementById("zGreat").onclick  = () => toggleZone("great");
+  document.getElementById("zNormal").onclick = () => toggleZone("normal");
+  document.getElementById("zMedium").onclick = () => toggleZone("medium");
+  document.getElementById("zLow").onclick    = () => toggleZone("low");
 
+  // ========= Street mode =========
+  const stateLine = document.getElementById("stateLine");
+  const streetWidthEl = document.getElementById("streetWidth");
+  const btnStreetMode = document.getElementById("btnStreetMode");
+
+  let streetMode = false;
+  let streetSide = "left";
+  let streetDrawer = null;
+
+  let isCalibrating = false;
+
+  function refreshState() {
+    const lvl = activeZoneKey ? ZONES[activeZoneKey].label : "не выбран";
+    if (!streetMode) stateLine.textContent = `выключено • уровень: ${lvl}`;
+    else stateLine.textContent = `линии включены • сторона: ${streetSide === "left" ? "слева по ходу" : "справа по ходу"} • уровень: ${lvl}`;
+  }
+
+  const sideLeftBtn = document.getElementById("sideLeft");
+  const sideRightBtn = document.getElementById("sideRight");
+  function syncSideUI() {
+    sideLeftBtn.classList.toggle("active", streetSide === "left");
+    sideRightBtn.classList.toggle("active", streetSide === "right");
+    refreshState();
+  }
+  sideLeftBtn.onclick = () => { streetSide = "left"; syncSideUI(); showToast("Сторона: слева по ходу"); };
+  sideRightBtn.onclick = () => { streetSide = "right"; syncSideUI(); showToast("Сторона: справа по ходу"); };
+  document.getElementById("btnFlip").onclick = () => { streetSide = (streetSide === "left") ? "right" : "left"; syncSideUI(); showToast("Flip"); };
+
+  function parseStreetWidthMeters() {
+    const w = Number(String(streetWidthEl.value || "15").trim().replace(",", "."));
+    if (!Number.isFinite(w)) return 15;
+    return Math.max(2, Math.min(60, w));
+  }
+
+  function disableStreetDrawing() { try { if (streetDrawer) streetDrawer.disable(); } catch(e) {} }
+
+  function enableStreetDrawing() {
+    disableStreetDrawing();
+    if (!streetMode) return;
+    if (isCalibrating) return;
+    if (!activeZoneKey) { showToast("Сначала выбери уровень 🔴🟠🟡🟢", 1800); return; }
+    if (!streetDrawer) streetDrawer = new L.Draw.Polyline(map, { shapeOptions: {} });
+    try { streetDrawer.enable(); } catch(e) {}
+  }
+
+  btnStreetMode.onclick = () => {
+    streetMode = !streetMode;
+    if (streetMode) {
+      btnStreetMode.textContent = "🟩 Линии включены (рисуй)";
+      enableStreetDrawing();
+      showToast("Рисуй линию — создастся полоса фасада", 1800);
+    } else {
+      btnStreetMode.textContent = "🖊 Включить линии фасада";
+      disableStreetDrawing();
+      showToast("Линии выключены");
+    }
+    refreshState();
+  };
+
+  function makeOneSidedFacadePolygon(lineFeature, widthMeters, side) {
+    const halfKm = (widthMeters / 2) / 1000;
+    const sign = (side === "left") ? -1 : +1; // фикс слева/справа
+    const offsetLine = turf.lineOffset(lineFeature, sign * halfKm, { units: "kilometers" });
+    return turf.buffer(offsetLine, halfKm, { units: "kilometers" });
+  }
+
+  function makeProps(zoneKey) {
+    const z = ZONES[zoneKey];
+    return {
+      zone_type: zoneKey,
+      zone_label: z.label,
+      zone_score: z.score,
+      mode: "street_facade",
+      street_side: (streetSide === "left") ? "left_of_draw" : "right_of_draw",
+      facade_width_m: parseStreetWidthMeters()
+    };
+  }
+
+  map.on(L.Draw.Event.CREATED, (event) => {
+    if (!streetMode) return;
+    if (!activeZoneKey) { try { event.layer.remove(); } catch(_) {} return; }
+
+    const w = parseStreetWidthMeters();
     const z = ZONES[activeZoneKey];
-    const line = event.layer.toGeoJSON();
-    const buffered = turf.buffer(line, BUFFER_M / 1000, { units: "kilometers" });
 
-    const polyLayer = L.geoJSON(buffered, { style: { color: z.color, weight: 2, fillColor: z.color, fillOpacity: 0.18 } });
+    const line = event.layer.toGeoJSON();
+    let poly;
+    try { poly = makeOneSidedFacadePolygon(line, w, streetSide); }
+    catch (e) { alert("Не смог построить полосу. Нарисуй линию чуть длиннее."); return; }
+
+    const polyLayer = L.geoJSON(poly, {
+      style: { color: z.color, weight: 2, fillColor: z.color, fillOpacity: 0.18 }
+    });
+
     polyLayer.eachLayer(l => {
       l.feature = l.feature || { type:"Feature", properties:{}, geometry:null };
       Object.assign(l.feature.properties, makeProps(activeZoneKey));
-      attachDeleteOnRightClick(l);
+      attachDeleteHandlers(l);
       zonesGroup.addLayer(l);
     });
 
     updateGeo();
-
-    setTimeout(() => {
-      if (activeZoneKey) enableDrawing();
-    }, 0);
+    setTimeout(() => { if (streetMode) enableStreetDrawing(); }, 0);
   });
 
-  map.on("draw:edited", () => updateGeo());
-  map.on("draw:deleted", () => updateGeo());
+  // ESC
+  window.addEventListener("keydown", (ev) => {
+    if (ev.key === "Escape") {
+      ev.preventDefault();
+      streetMode = false;
+      btnStreetMode.textContent = "🖊 Включить линии фасада";
+      disableStreetDrawing();
+      refreshState();
+      stopCalibrate();
+      closeCalModal();
+      showToast("Выключено (Esc)");
+    }
+  }, { passive:false });
 
-  // =====================
-  // Layers (screens)
-  // =====================
+  // ========= IndexedDB (images) =========
+  const DB_NAME = "netwings_stencil_db_v4";
+  const DB_STORE = "layers";
+  function openDB() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open(DB_NAME, 1);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains(DB_STORE)) db.createObjectStore(DB_STORE, { keyPath: "key" });
+      };
+      req.onsuccess = () => resolve(req.result);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  function layerKey(projectId, layerId){ return `${projectId}:${layerId}`; }
+
+  async function idbPutLayer(projectId, layerId, dataUrl) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(DB_STORE, "readwrite");
+      tx.objectStore(DB_STORE).put({ key: layerKey(projectId, layerId), projectId, layerId, dataUrl });
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+  async function idbGetLayer(projectId, layerId) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(DB_STORE, "readonly");
+      const req = tx.objectStore(DB_STORE).get(layerKey(projectId, layerId));
+      req.onsuccess = () => resolve(req.result?.dataUrl || null);
+      req.onerror = () => reject(req.error);
+    });
+  }
+  async function idbDeleteLayer(projectId, layerId) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(DB_STORE, "readwrite");
+      tx.objectStore(DB_STORE).delete(layerKey(projectId, layerId));
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+  async function deleteProjectImages(projectId) {
+    const db = await openDB();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(DB_STORE, "readwrite");
+      const store = tx.objectStore(DB_STORE);
+      const req = store.openCursor();
+      req.onsuccess = () => {
+        const cursor = req.result;
+        if (!cursor) return;
+        const v = cursor.value;
+        if (v?.projectId === projectId) cursor.delete();
+        cursor.continue();
+      };
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => reject(tx.error);
+    });
+  }
+
+  // ========= Layers =========
+  function metaKey(){ return `netwings_stencil_layers_meta_v4__${activeProjectId}`; }
+  function activeKey(){ return `netwings_stencil_layers_active_v4__${activeProjectId}`; }
+
   const layersList = document.getElementById("layersList");
   const btnAddLayers = document.getElementById("btnAddLayers");
   const imgFiles = document.getElementById("imgFiles");
 
   let layers = [];
   let activeLayerId = null;
-
-  function genId() { return "L" + Math.random().toString(16).slice(2) + Date.now().toString(16); }
 
   function fileToDataURL(file) {
     return new Promise((resolve, reject) => {
@@ -465,34 +619,18 @@
 
   function saveMeta() {
     const payload = layers.map(l => ({
-      id: l.id,
-      opacity: l.opacity,
-      locked: l.locked,
-      bounds: l.boundsObj
+      id: l.id, name: l.name, opacity: l.opacity, bounds: l.boundsObj
     }));
-    localStorage.setItem(META_KEY, JSON.stringify(payload));
-    localStorage.setItem(ACTIVE_KEY, activeLayerId || "");
+    localStorage.setItem(metaKey(), JSON.stringify(payload));
+    localStorage.setItem(activeKey(), activeLayerId || "");
   }
 
   function getLayer(id) { return layers.find(x => x.id === id) || null; }
-  function getActiveLayer() { return getLayer(activeLayerId); }
-
-  function syncActiveOutline() {
-    layers.forEach(l => {
-      if (!l.outline) return;
-      if (l.id === activeLayerId) {
-        map.addLayer(l.outline);
-      } else {
-        map.removeLayer(l.outline);
-      }
-    });
-  }
 
   function setActiveLayer(id) {
     activeLayerId = id;
     layers.forEach(l => l.overlay.setZIndex(l.id === activeLayerId ? 1000 : 500));
     renderLayersList();
-    syncActiveOutline();
     saveMeta();
   }
 
@@ -504,45 +642,22 @@
     saveMeta();
   }
 
-  function toggleLock(id) {
-    const l = getLayer(id);
-    if (!l) return;
-    l.locked = !l.locked;
-    renderLayersList();
-    saveMeta();
-    showToast(l.locked ? "Слой зафиксирован" : "Слой разфиксирован");
-  }
-
-  function fitToScreen(id) {
-    const l = getLayer(id);
-    if (!l) return;
-    const b = map.getBounds();
-    l.overlay.setBounds(b);
-    l.boundsObj = serializeBounds(b);
-    l.outline.setBounds(b);
-    saveMeta();
-    showToast("Слой растянут на экран");
-  }
-
   async function deleteLayer(id) {
     const idx = layers.findIndex(x => x.id === id);
     if (idx < 0) return;
     const l = layers[idx];
     map.removeLayer(l.overlay);
-    map.removeLayer(l.outline);
     layers.splice(idx, 1);
-    await idbDeleteLayer(id);
-
+    await idbDeleteLayer(activeProjectId, id);
     if (activeLayerId === id) activeLayerId = layers.length ? layers[0].id : null;
     saveMeta();
     renderLayersList();
-    syncActiveOutline();
   }
 
   function renderLayersList() {
     layersList.innerHTML = "";
     if (!layers.length) {
-      layersList.innerHTML = `<div class="small">Слоёв нет. Нажми “Добавить скрин(ы)”.</div>`;
+      layersList.innerHTML = `<div class="small">Трафаретов нет. Нажми “Добавить скрин(ы)”.</div>`;
       return;
     }
 
@@ -558,11 +673,11 @@
 
       const name = document.createElement("div");
       name.className = "layerName";
-      name.textContent = "Слой";
+      name.textContent = l.name || "Трафарет";
 
       const pill = document.createElement("div");
       pill.className = "pill";
-      pill.textContent = l.locked ? "Зафиксирован" : "Разфиксирован";
+      pill.textContent = "Только привязка";
 
       top.appendChild(name);
       top.appendChild(pill);
@@ -570,23 +685,17 @@
       const btnRow = document.createElement("div");
       btnRow.className = "row";
 
-      const bLock = document.createElement("button");
-      bLock.className = "mini ok";
-      bLock.textContent = l.locked ? "Разфиксировать" : "Зафиксировать";
-      bLock.onclick = (e) => { e.stopPropagation(); if (!isActive) setActiveLayer(l.id); toggleLock(l.id); };
-
-      const bFit = document.createElement("button");
-      bFit.className = "mini";
-      bFit.textContent = "Под экран";
-      bFit.onclick = (e) => { e.stopPropagation(); if (!isActive) setActiveLayer(l.id); fitToScreen(l.id); };
+      const bCal = document.createElement("button");
+      bCal.className = "mini primary";
+      bCal.textContent = "🎯 Привязка (2 точки)";
+      bCal.onclick = (e) => { e.stopPropagation(); if (!isActive) setActiveLayer(l.id); startCalibrate(l.id); };
 
       const bDel = document.createElement("button");
       bDel.className = "mini danger";
       bDel.textContent = "Удалить";
       bDel.onclick = (e) => { e.stopPropagation(); deleteLayer(l.id); };
 
-      btnRow.appendChild(bLock);
-      btnRow.appendChild(bFit);
+      btnRow.appendChild(bCal);
       btnRow.appendChild(bDel);
 
       const opacityWrap = document.createElement("div");
@@ -595,13 +704,23 @@
       range.type = "range";
       range.min = "0";
       range.max = "100";
-      range.value = String(Math.round((l.opacity ?? 0.6) * 100));
+      range.value = String(Math.round((l.opacity ?? 0.5) * 100));
       range.oninput = (e) => { e.stopPropagation(); updateOpacity(l.id, Number(e.target.value)/100); };
       opacityWrap.appendChild(range);
+
+      const renameWrap = document.createElement("div");
+      renameWrap.innerHTML = `<div class="small" style="margin-top:8px">Название</div>`;
+      const rename = document.createElement("input");
+      rename.type = "text";
+      rename.value = l.name || "";
+      rename.placeholder = "например: Трафарет трафика";
+      rename.oninput = (e) => { e.stopPropagation(); l.name = e.target.value; saveMeta(); };
+      renameWrap.appendChild(rename);
 
       item.appendChild(top);
       item.appendChild(btnRow);
       item.appendChild(opacityWrap);
+      item.appendChild(renameWrap);
 
       layersList.appendChild(item);
     });
@@ -610,72 +729,56 @@
   async function addLayerFromDataUrl(dataUrl) {
     const id = genId();
     const bounds = map.getBounds();
+    await idbPutLayer(activeProjectId, id, dataUrl);
 
-    await idbPutLayer(id, dataUrl);
-
-    const overlay = L.imageOverlay(dataUrl, bounds, {
-      opacity: 0.6,
-      interactive: true
-    }).addTo(map);
-
+    const overlay = L.imageOverlay(dataUrl, bounds, { opacity: 0.5, interactive: true }).addTo(map);
     overlay.on("click", () => setActiveLayer(id));
 
-    const outline = L.rectangle(bounds, {
-      color: "#ff7a00", weight: 2, fill: false, interactive: false
-    });
-
-    const layerObj = {
-      id,
-      opacity: 0.6,
-      locked: false, // по умолчанию разфиксирован
-      boundsObj: serializeBounds(bounds),
-      overlay,
-      outline
-    };
-
+    const layerObj = { id, name: "Трафарет", opacity: 0.5, boundsObj: serializeBounds(bounds), overlay, dataUrl };
     layers.unshift(layerObj);
     activeLayerId = id;
     saveMeta();
     renderLayersList();
-    syncActiveOutline();
-    showToast("Слой добавлен (разфиксирован). Двигай стрелками.");
+    showToast("Трафарет добавлен → сделай прозрачность → привяжи по 2 точкам", 2200);
+  }
+
+  function unloadAllLayersFromMap() {
+    try { layers.forEach(l => { try { map.removeLayer(l.overlay); } catch(_) {} }); } catch(_) {}
+    layers = [];
+    activeLayerId = null;
+    renderLayersList();
   }
 
   async function loadLayers() {
-    const rawMeta = localStorage.getItem(META_KEY);
+    const rawMeta = localStorage.getItem(metaKey());
     let meta = [];
     try { meta = rawMeta ? (JSON.parse(rawMeta) || []) : []; } catch(e) { meta = []; }
 
     layers = [];
-
     for (const m of meta) {
-      const dataUrl = await idbGetLayer(m.id);
+      const dataUrl = await idbGetLayer(activeProjectId, m.id);
       if (!dataUrl) continue;
 
       const bounds = deserializeBounds(m.bounds);
       const overlay = L.imageOverlay(dataUrl, bounds, {
-        opacity: typeof m.opacity === "number" ? m.opacity : 0.6,
+        opacity: typeof m.opacity === "number" ? m.opacity : 0.5,
         interactive: true
       }).addTo(map);
-
       overlay.on("click", () => setActiveLayer(m.id));
-
-      const outline = L.rectangle(bounds, { color:"#ff7a00", weight: 2, fill:false, interactive:false });
 
       layers.push({
         id: m.id,
-        opacity: typeof m.opacity === "number" ? m.opacity : 0.6,
-        locked: (typeof m.locked === "boolean") ? m.locked : false,
+        name: m.name || "Трафарет",
+        opacity: typeof m.opacity === "number" ? m.opacity : 0.5,
         boundsObj: m.bounds,
         overlay,
-        outline
+        dataUrl
       });
     }
 
-    const savedActive = localStorage.getItem(ACTIVE_KEY) || "";
+    const savedActive = localStorage.getItem(activeKey()) || "";
     activeLayerId = (savedActive && getLayer(savedActive)) ? savedActive : (layers[0]?.id || null);
     renderLayersList();
-    syncActiveOutline();
   }
 
   btnAddLayers.onclick = () => { imgFiles.value = ""; imgFiles.click(); };
@@ -688,176 +791,333 @@
     }
   };
 
-  // =====================
-  // Move/scale active layer
-  // =====================
+  // ========= Calibration modal =========
+  const calModal = document.getElementById("calModal");
+  const calHint = document.getElementById("calHint");
+  const calImg = document.getElementById("calImg");
+  const calViewport = document.getElementById("calViewport");
+  const calStage = document.getElementById("calStage");
+
+  const calZoomIn = document.getElementById("calZoomIn");
+  const calZoomOut = document.getElementById("calZoomOut");
+  const calZoomFit = document.getElementById("calZoomFit");
+
+  const markA = document.getElementById("markA");
+  const markB = document.getElementById("markB");
+
   function metersToLat(m) { return m / 111320; }
   function metersToLng(m, atLat) { return m / (111320 * Math.cos(atLat * Math.PI/180)); }
 
-  function stepFromEvent(ev) {
-    let step = 5;
-    if (ev.altKey) step = 1;
-    if (ev.shiftKey) step = 20;
-    if (ev.ctrlKey || ev.metaKey) step = 50;
-    return step;
+  let calZoom = 1, calPanX = 0, calPanY = 0;
+  let calMinZoom = 1, calMaxZoom = 12;
+
+  function applyCalTransform() {
+    calImg.style.transform = `translate(${calPanX}px, ${calPanY}px) scale(${calZoom})`;
+    // маркеры должны двигаться вместе с картинкой, поэтому ставим их в "экранных" координатах ниже (setScreenMarker)
   }
 
-  function nudgeActive(dxMeters, dyMeters) {
-    const l = getActiveLayer();
-    if (!l) return;
-    if (l.locked) { showToast("Слой зафиксирован — сначала разфиксируй"); return; }
-
-    const b = l.overlay.getBounds();
-    const c = b.getCenter();
-    const dLat = metersToLat(dyMeters);
-    const dLng = metersToLng(dxMeters, c.lat);
-
-    const sw = b.getSouthWest();
-    const ne = b.getNorthEast();
-
-    const newBounds = L.latLngBounds(
-      [sw.lat + dLat, sw.lng + dLng],
-      [ne.lat + dLat, ne.lng + dLng]
-    );
-
-    l.overlay.setBounds(newBounds);
-    l.outline.setBounds(newBounds);
-    l.boundsObj = serializeBounds(newBounds);
-    saveMeta();
+  function getFitZoom() {
+    const vw = calViewport.clientWidth;
+    const vh = calViewport.clientHeight;
+    const iw = calImg.naturalWidth || 1;
+    const ih = calImg.naturalHeight || 1;
+    return Math.max(vw / iw, vh / ih);
   }
 
-  function scaleActive(factor) {
-    const l = getActiveLayer();
-    if (!l) return;
-    if (l.locked) { showToast("Слой зафиксирован — сначала разфиксируй"); return; }
+  function clampPan() {
+    const vw = calViewport.clientWidth;
+    const vh = calViewport.clientHeight;
+    const iw = (calImg.naturalWidth || 1) * calZoom;
+    const ih = (calImg.naturalHeight || 1) * calZoom;
 
-    const b = l.overlay.getBounds();
-    const c = b.getCenter();
-    const sw = b.getSouthWest();
-    const ne = b.getNorthEast();
+    const minX = vw - iw;
+    const minY = vh - ih;
 
-    const halfLat = (ne.lat - sw.lat) / 2;
-    const halfLng = (ne.lng - sw.lng) / 2;
-
-    const newBounds = L.latLngBounds(
-      [c.lat - halfLat * factor, c.lng - halfLng * factor],
-      [c.lat + halfLat * factor, c.lng + halfLng * factor]
-    );
-
-    l.overlay.setBounds(newBounds);
-    l.outline.setBounds(newBounds);
-    l.boundsObj = serializeBounds(newBounds);
-    saveMeta();
+    calPanX = Math.min(0, Math.max(minX, calPanX));
+    calPanY = Math.min(0, Math.max(minY, calPanY));
   }
 
-  document.getElementById("btnLeft").onclick  = () => nudgeActive(-5, 0);
-  document.getElementById("btnRight").onclick = () => nudgeActive(+5, 0);
-  document.getElementById("btnUp").onclick    = () => nudgeActive(0, +5);
-  document.getElementById("btnDown").onclick  = () => nudgeActive(0, -5);
+  function setZoom(newZoom, anchorX, anchorY) {
+    const prevZoom = calZoom;
+    calZoom = Math.max(calMinZoom, Math.min(calMaxZoom, newZoom));
+    const k = calZoom / prevZoom;
+    calPanX = anchorX - (anchorX - calPanX) * k;
+    calPanY = anchorY - (anchorY - calPanY) * k;
+    clampPan();
+    applyCalTransform();
+    refreshMarkers();
+  }
 
-  document.getElementById("btnScaleUp").onclick   = () => scaleActive(1.05);
-  document.getElementById("btnScaleDown").onclick = () => scaleActive(0.95);
+  function fitAndCenter() {
+    calMinZoom = getFitZoom();
+    calZoom = calMinZoom;
 
-  document.getElementById("btnFit").onclick = () => {
-    const l = getActiveLayer();
-    if (!l) return;
-    fitToScreen(l.id);
-  };
+    const vw = calViewport.clientWidth;
+    const vh = calViewport.clientHeight;
+    const iw = (calImg.naturalWidth || 1) * calZoom;
+    const ih = (calImg.naturalHeight || 1) * calZoom;
 
-  window.addEventListener("keydown", (ev) => {
-    const keys = ["ArrowLeft","ArrowRight","ArrowUp","ArrowDown","+","=","-","_"];
-    if (!keys.includes(ev.key)) return;
-    ev.preventDefault();
+    calPanX = (vw - iw) / 2;
+    calPanY = (vh - ih) / 2;
+    clampPan();
+    applyCalTransform();
+    refreshMarkers();
+  }
 
-    const step = stepFromEvent(ev);
-    if (ev.key === "ArrowLeft")  nudgeActive(-step, 0);
-    if (ev.key === "ArrowRight") nudgeActive(+step, 0);
-    if (ev.key === "ArrowUp")    nudgeActive(0, +step);
-    if (ev.key === "ArrowDown")  nudgeActive(0, -step);
+  function openCalModal(text) {
+    calHint.innerHTML = text;
+    calModal.style.display = "block";
+  }
+  function closeCalModal() { calModal.style.display = "none"; }
+  document.getElementById("calClose").onclick = () => { stopCalibrate(); closeCalModal(); };
 
-    if (ev.key === "+" || ev.key === "=") scaleActive(1.05);
-    if (ev.key === "-" || ev.key === "_") scaleActive(0.95);
+  calZoomIn.onclick = () => setZoom(calZoom * 1.15, calViewport.clientWidth/2, calViewport.clientHeight/2);
+  calZoomOut.onclick = () => setZoom(calZoom / 1.15, calViewport.clientWidth/2, calViewport.clientHeight/2);
+  calZoomFit.onclick = () => fitAndCenter();
+
+  calViewport.addEventListener("wheel", (e) => {
+    if (calModal.style.display !== "block") return;
+    e.preventDefault();
+    const rect = calViewport.getBoundingClientRect();
+    const cx = e.clientX - rect.left;
+    const cy = e.clientY - rect.top;
+    const factor = e.deltaY < 0 ? 1.12 : 1/1.12;
+    setZoom(calZoom * factor, cx, cy);
   }, { passive:false });
 
-  // =====================
-  // Coords check
-  // =====================
-  const coordsInput = document.getElementById("coordsInput");
-  const btnCheckCoords = document.getElementById("btnCheckCoords");
-  const coordsResult = document.getElementById("coordsResult");
+  // --- New pointer logic (fix for Mac trackpad): click is detected on pointerup if moved <= 8px
+  let panPointerId = null;
+  let panStart = null;
+  const CLICK_TOLERANCE_PX = 8;
 
-  function parseCoordsAnyOrder(raw) {
-    if (!raw) return null;
-    let s = raw.trim();
-    const m = s.match(/<coords>(.*?)<\/coords>/i);
-    if (m && m[1]) s = m[1].trim();
-    s = s.replace(/;/g, ",");
-    const parts = s.split(",").map(x => x.trim()).filter(Boolean);
-    if (parts.length < 2) return null;
-
-    const a = Number(parts[0]), b = Number(parts[1]);
-    if (!Number.isFinite(a) || !Number.isFinite(b)) return null;
-
-    const asLatLng = { lat: a, lng: b };
-    const asLngLat = { lat: b, lng: a };
-    const ok = (p) => p.lat >= -90 && p.lat <= 90 && p.lng >= -180 && p.lng <= 180;
-
-    if (ok(asLatLng) && ok(asLngLat)) {
-      const d1 = Math.abs(asLatLng.lat - 59.93) + Math.abs(asLatLng.lng - 30.33);
-      const d2 = Math.abs(asLngLat.lat - 59.93) + Math.abs(asLngLat.lng - 30.33);
-      return d1 <= d2 ? asLatLng : asLngLat;
-    }
-    if (ok(asLatLng)) return asLatLng;
-    if (ok(asLngLat)) return asLngLat;
-    return null;
+  function viewportPointFromClient(clientX, clientY) {
+    const rect = calViewport.getBoundingClientRect();
+    return { vx: clientX - rect.left, vy: clientY - rect.top };
   }
 
-  function checkPointInZones(lat, lng) {
-    const geo = zonesGroup.toGeoJSON();
-    if (!geo?.features?.length) return { ok:false, msg:"Зон ещё нет — нарисуй." };
-
-    const pt = turf.point([lng, lat]);
-    let best = null;
-
-    for (const f of geo.features) {
-      if (!f?.geometry) continue;
-      if (f.geometry.type !== "Polygon" && f.geometry.type !== "MultiPolygon") continue;
-
-      let inside = false;
-      try { inside = turf.booleanPointInPolygon(pt, f); } catch(e) {}
-      if (!inside) continue;
-
-      const score = Number(f.properties?.zone_score ?? 0);
-      if (!best || score > best.score) {
-        best = { zone: f.properties?.zone_label || f.properties?.zone_type || "unknown", score };
-      }
-    }
-
-    if (!best) return { ok:false, msg:"Точка не попала ни в одну зону." };
-    return { ok:true, ...best };
+  function imgPointFromViewport(vx, vy) {
+    const x = (vx - calPanX) / calZoom;
+    const y = (vy - calPanY) / calZoom;
+    return { x, y };
   }
 
-  btnCheckCoords.onclick = () => {
-    const p = parseCoordsAnyOrder(coordsInput.value);
-    if (!p) { coordsResult.textContent = "Не смог распознать координаты."; return; }
+  function setMarker(el, pxPoint, labelVisible) {
+    if (!pxPoint) { el.style.display = "none"; return; }
+    // переводим координаты картинки -> координаты viewport (экран)
+    const vx = pxPoint.x * calZoom + calPanX;
+    const vy = pxPoint.y * calZoom + calPanY;
+    el.style.left = `${vx}px`;
+    el.style.top  = `${vy}px`;
+    el.style.display = "block";
+  }
 
-    map.setView([p.lat, p.lng], Math.max(map.getZoom(), 16));
-    const res = checkPointInZones(p.lat, p.lng);
+  function refreshMarkers() {
+    setMarker(markA, calState.imgA, true);
+    setMarker(markB, calState.imgB, true);
+  }
 
-    coordsResult.innerHTML = res.ok
-      ? `<b>Точка:</b> ${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}<br><b>Зона:</b> ${res.zone}<br><b>Score:</b> ${res.score}`
-      : `<b>Точка:</b> ${p.lat.toFixed(6)}, ${p.lng.toFixed(6)}<br><b>Результат:</b> ${res.msg}`;
+  function tryHandleScreenClick(clientX, clientY) {
+    const { vx, vy } = viewportPointFromClient(clientX, clientY);
+    const p = imgPointFromViewport(vx, vy);
+
+    if (p.x < 0 || p.y < 0 || p.x > calImg.naturalWidth || p.y > calImg.naturalHeight) {
+      showToast("Кликни по самой картинке", 1200);
+      return;
+    }
+
+    if (!calState.active) return;
+
+    if (calState.step === 2) {
+      calState.imgA = { x: p.x, y: p.y };
+      refreshMarkers();
+      calState.step = 3;
+      closeCalModal();
+      showToast("Шаг 3/4: кликни ТОЧКУ B на КАРТЕ", 2200);
+      return;
+    }
+
+    if (calState.step === 4) {
+      calState.imgB = { x: p.x, y: p.y };
+      refreshMarkers();
+      closeCalModal();
+      applyCalibration();
+      stopCalibrate();
+      return;
+    }
+  }
+
+  calStage.addEventListener("pointerdown", (e) => {
+    if (calModal.style.display !== "block") return;
+    panPointerId = e.pointerId;
+    calStage.setPointerCapture(panPointerId);
+    calStage.style.cursor = "grabbing";
+
+    panStart = {
+      x: e.clientX, y: e.clientY,
+      panX: calPanX, panY: calPanY
+    };
+  });
+
+  calStage.addEventListener("pointermove", (e) => {
+    if (panPointerId === null || e.pointerId !== panPointerId) return;
+    const dx = e.clientX - panStart.x;
+    const dy = e.clientY - panStart.y;
+    calPanX = panStart.panX + dx;
+    calPanY = panStart.panY + dy;
+    clampPan();
+    applyCalTransform();
+    refreshMarkers();
+  });
+
+  calStage.addEventListener("pointerup", (e) => {
+    if (panPointerId === null || e.pointerId !== panPointerId) return;
+
+    const dx = e.clientX - panStart.x;
+    const dy = e.clientY - panStart.y;
+
+    calStage.style.cursor = "grab";
+    try { calStage.releasePointerCapture(panPointerId); } catch(_) {}
+    panPointerId = null;
+
+    // если почти не двигали — это клик
+    if (Math.hypot(dx, dy) <= CLICK_TOLERANCE_PX) {
+      tryHandleScreenClick(e.clientX, e.clientY);
+    }
+  });
+
+  // ========= Calibration state =========
+  const calState = {
+    active: false,
+    layerId: null,
+    step: 0, // 1 mapA, 2 imgA, 3 mapB, 4 imgB
+    mapA: null,
+    mapB: null,
+    imgA: null,
+    imgB: null
   };
 
-  // =====================
-  // Init
-  // =====================
-  loadZonesFromStorage();
+  function startCalibrate(layerId) {
+    const l = getLayer(layerId);
+    if (!l) return;
+    setActiveLayer(layerId);
+
+    isCalibrating = true;
+    disableStreetDrawing();
+
+    calState.active = true;
+    calState.layerId = layerId;
+    calState.step = 1;
+    calState.mapA = calState.mapB = null;
+    calState.imgA = calState.imgB = null;
+    refreshMarkers();
+
+    closeCalModal();
+    showToast("Привязка: кликни точку A на КАРТЕ", 2200);
+  }
+
+  function stopCalibrate() {
+    calState.active = false;
+    calState.layerId = null;
+    calState.step = 0;
+    calState.mapA = calState.mapB = null;
+    calState.imgA = calState.imgB = null;
+    refreshMarkers();
+
+    isCalibrating = false;
+    if (streetMode) enableStreetDrawing();
+  }
+
+  function mapDistanceMeters(a, b) {
+    const km = turf.distance(turf.point([a.lng, a.lat]), turf.point([b.lng, b.lat]), { units:"kilometers" });
+    return km * 1000;
+  }
+  function pixelDistance(a, b) {
+    const dx = a.x - b.x, dy = a.y - b.y;
+    return Math.sqrt(dx*dx + dy*dy);
+  }
+
+  function applyCalibration() {
+    const l = getLayer(calState.layerId);
+    if (!l) return;
+
+    const mA = calState.mapA, mB = calState.mapB;
+    const pA = calState.imgA, pB = calState.imgB;
+
+    const dM = mapDistanceMeters(mA, mB);
+    const dP = pixelDistance(pA, pB);
+    if (!dP || dP < 2) { alert("Слишком маленькое расстояние между точками на скрине."); return; }
+
+    const metersPerPixel = dM / dP;
+    const W = calImg.naturalWidth;
+    const H = calImg.naturalHeight;
+
+    function pxToLatLng(dxPx, dyPx) {
+      const dxM = dxPx * metersPerPixel;
+      const dyM = dyPx * metersPerPixel;
+      const dLat = -metersToLat(dyM);
+      const dLng = metersToLng(dxM, mA.lat);
+      return { lat: mA.lat + dLat, lng: mA.lng + dLng };
+    }
+
+    const tl = pxToLatLng(0 - pA.x, 0 - pA.y);
+    const tr = pxToLatLng(W - pA.x, 0 - pA.y);
+    const bl = pxToLatLng(0 - pA.x, H - pA.y);
+    const br = pxToLatLng(W - pA.x, H - pA.y);
+
+    const minLat = Math.min(tl.lat, tr.lat, bl.lat, br.lat);
+    const maxLat = Math.max(tl.lat, tr.lat, bl.lat, br.lat);
+    const minLng = Math.min(tl.lng, tr.lng, bl.lng, br.lng);
+    const maxLng = Math.max(tl.lng, tr.lng, bl.lng, br.lng);
+
+    const bounds = L.latLngBounds([minLat, minLng], [maxLat, maxLng]);
+    l.overlay.setBounds(bounds);
+    l.boundsObj = serializeBounds(bounds);
+    saveMeta();
+
+    showToast("Привязка применена ✅", 2000);
+  }
+
+  // Map clicks for calibration
+  map.on("click", (e) => {
+    if (!calState.active) return;
+
+    if (calState.step === 1) {
+      calState.mapA = e.latlng;
+      calState.step = 2;
+
+      const l = getLayer(calState.layerId);
+      calImg.src = l.dataUrl;
+      calImg.onload = () => {
+        openCalModal("Шаг 2/4: кликни ТОЧКУ A на СКРИНЕ (можно приближать/панить).");
+        fitAndCenter();
+        refreshMarkers();
+      };
+      return;
+    }
+
+    if (calState.step === 3) {
+      calState.mapB = e.latlng;
+      calState.step = 4;
+
+      const l = getLayer(calState.layerId);
+      calImg.src = l.dataUrl;
+      calImg.onload = () => {
+        openCalModal("Шаг 4/4: кликни ТОЧКУ B на СКРИНЕ (после клика привязка применится).");
+        fitAndCenter();
+        refreshMarkers();
+      };
+      return;
+    }
+  });
+
+  // ========= Init =========
+  loadZones();
   updateGeo();
-  setDrawStateText();
+  syncSideUI();
+  refreshState();
 
   loadLayers().then(() => {
-    showToast("Готово. Добавь скрин(ы). Для рисования нажми уровень проходимости.");
+    showToast("Готово. Проект → трафарет → привязка → линии фасада.", 2400);
   });
 </script>
 
