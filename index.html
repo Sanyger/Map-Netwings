@@ -209,10 +209,11 @@
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@turf/turf@6.5.0/turf.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
 
 <script>
-  const APP_VERSION = "v2026.02.16-2";
-  const APP_RELEASE_NOTES = "shared-session + import-json";
+  const APP_VERSION = "v2026.02.16-3";
+  const APP_RELEASE_NOTES = "live-shared-db-gun";
   const appVersionEl = document.getElementById("appVersion");
   if (appVersionEl) appVersionEl.textContent = `Версия: ${APP_VERSION} • ${APP_RELEASE_NOTES}`;
 
@@ -333,9 +334,14 @@
   const sharedSessionInput = document.getElementById("sharedSessionId");
   const SHARED_SESSION_KEY = "netwings_shared_session_v1";
   const clientId = genId();
-  const collabChannel = (typeof BroadcastChannel !== "undefined") ? new BroadcastChannel("netwings_collab_v1") : null;
+  const gun = (typeof Gun !== "undefined") ? Gun(["https://gun-manhattan.herokuapp.com/gun"]) : null;
+  const collabRoot = gun ? gun.get("map-netwings").get("rooms") : null;
   let suppressSync = false;
+  let isApplyingRemoteState = false;
   let activeSessionId = localStorage.getItem(SHARED_SESSION_KEY) || "main-room";
+  let roomStateNode = null;
+  let lastRemoteUpdatedAt = 0;
+  let publishTimer = null;
   sharedSessionInput.value = activeSessionId;
 
   const ZONES = {
@@ -383,10 +389,7 @@
     const gj = zonesGroup.toGeoJSON();
     geojsonBox.value = JSON.stringify(gj, null, 2);
     try { localStorage.setItem(zonesKey(), JSON.stringify(gj)); } catch(e) {}
-    try { localStorage.setItem(sharedZonesKey(), JSON.stringify(gj)); } catch(e) {}
-    if (!silent) {
-      if (collabChannel) collabChannel.postMessage({ type: "zones", sessionId: activeSessionId, sourceClientId: clientId, payload: gj });
-    }
+    if (!silent) schedulePublishState("zones");
   }
 
   function applyGeoJson(gj, {silent=false} = {}) {
@@ -397,29 +400,123 @@
     suppressSync = false;
   }
 
-  function loadZonesFromSessionOrProject() {
-    const fromSession = localStorage.getItem(sharedZonesKey());
-    if (fromSession) {
-      try { addGeoJsonToZonesGroup(JSON.parse(fromSession)); return; } catch(e) {}
-    }
-    const fromProject = localStorage.getItem(zonesKey());
-    if (!fromProject) return;
-    try { addGeoJsonToZonesGroup(JSON.parse(fromProject)); } catch(e) {}
+  function applyGeoJson(gj, {silent=false} = {}) {
+    suppressSync = true;
+    zonesGroup.clearLayers();
+    addGeoJsonToZonesGroup(gj);
+    updateGeo({silent});
+    suppressSync = false;
   }
 
-  function loadZones() {
-    loadZonesFromSessionOrProject();
+  async function snapshotLayers() {
+    const out = [];
+    for (const l of layers) {
+      const dataUrl = l.dataUrl || await idbGetLayer(activeProjectId, l.id);
+      if (!dataUrl) continue;
+      out.push({
+        id: l.id,
+        name: l.name || "Трафарет",
+        opacity: typeof l.opacity === "number" ? l.opacity : 0.5,
+        boundsObj: l.boundsObj,
+        dataUrl
+      });
+    }
+    return out;
+  }
+
+  async function publishState(reason = "manual") {
+    if (!roomStateNode || isApplyingRemoteState) return;
+    const payload = {
+      sourceClientId: clientId,
+      updatedAt: Date.now(),
+      reason,
+      zones: zonesGroup.toGeoJSON(),
+      layers: await snapshotLayers()
+    };
+    roomStateNode.put(payload);
+  }
+
+  function schedulePublishState(reason = "change") {
+    if (!roomStateNode || suppressSync || isApplyingRemoteState) return;
+    if (publishTimer) clearTimeout(publishTimer);
+    publishTimer = setTimeout(() => {
+      publishTimer = null;
+      publishState(reason);
+    }, 250);
+  }
+
+  async function applyRemoteLayers(remoteLayers) {
+    unloadAllLayersFromMap();
+    for (const item of (remoteLayers || [])) {
+      if (!item?.dataUrl || !item?.boundsObj) continue;
+      await idbPutLayer(activeProjectId, item.id, item.dataUrl);
+      const bounds = deserializeBounds(item.boundsObj);
+      const overlay = L.imageOverlay(item.dataUrl, bounds, {
+        opacity: typeof item.opacity === "number" ? item.opacity : 0.5,
+        interactive: true
+      }).addTo(map);
+      overlay.on("click", () => setActiveLayer(item.id));
+      layers.push({
+        id: item.id,
+        name: item.name || "Трафарет",
+        opacity: typeof item.opacity === "number" ? item.opacity : 0.5,
+        boundsObj: item.boundsObj,
+        overlay,
+        dataUrl: item.dataUrl
+      });
+    }
+    activeLayerId = layers[0]?.id || null;
+    saveMeta();
+    renderLayersList();
+  }
+
+  function subscribeRoomState() {
+    if (!collabRoot) return;
+    if (roomStateNode) roomStateNode.off();
+    roomStateNode = collabRoot.get(activeSessionId).get("state");
+    roomStateNode.on(async (state) => {
+      if (!state || typeof state !== "object") return;
+      if (state.sourceClientId === clientId) return;
+      if (!state.updatedAt || state.updatedAt <= lastRemoteUpdatedAt) return;
+      lastRemoteUpdatedAt = state.updatedAt;
+      isApplyingRemoteState = true;
+      try {
+        if (state.zones) applyGeoJson(state.zones, {silent:true});
+        await applyRemoteLayers(state.layers || []);
+        showToast("Получено обновление от другого пользователя", 1800);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        isApplyingRemoteState = false;
+      }
+    });
   }
 
   function applySession() {
     const sid = (sharedSessionInput.value || "").trim();
     if (!sid) { alert("Укажи ID общей сессии"); return; }
+    if (!collabRoot) { alert("Онлайн-синхронизация недоступна (Gun не загрузился)"); return; }
+
     activeSessionId = sid;
     localStorage.setItem(SHARED_SESSION_KEY, sid);
-    zonesGroup.clearLayers();
-    loadZones();
-    updateGeo({silent:true});
-    showToast(`Сессия: ${sid}`);
+    subscribeRoomState();
+
+    roomStateNode.once(async (state) => {
+      if (state?.updatedAt && state?.sourceClientId !== clientId) {
+        lastRemoteUpdatedAt = state.updatedAt;
+        isApplyingRemoteState = true;
+        try {
+          if (state.zones) applyGeoJson(state.zones, {silent:true});
+          await applyRemoteLayers(state.layers || []);
+          showToast(`Сессия: ${sid} (подтянул актуальную карту)`, 2200);
+        } finally {
+          isApplyingRemoteState = false;
+        }
+      } else {
+        publishState("join-init");
+        showToast(`Сессия: ${sid} (создана)`);
+      }
+    });
   }
 
   document.getElementById("btnApplySession").onclick = applySession;
@@ -430,7 +527,6 @@
       const text = JSON.stringify(gj, null, 2);
       geojsonBox.value = text;
       localStorage.setItem(zonesKey(), JSON.stringify(gj));
-      localStorage.setItem(sharedZonesKey(), JSON.stringify(gj));
 
       const blob = new Blob([text], { type: "application/geo+json;charset=utf-8" });
       const url = URL.createObjectURL(blob);
@@ -460,6 +556,7 @@
       const gj = JSON.parse(text);
       geojsonBox.value = JSON.stringify(gj, null, 2);
       applyGeoJson(gj);
+      schedulePublishState("import-file");
       showToast("Импортировано из файла");
     } catch (err) {
       console.error(err);
@@ -475,31 +572,10 @@
     try {
       const gj = JSON.parse(geojsonBox.value);
       applyGeoJson(gj);
+      schedulePublishState("import-text");
       showToast("Импортировано из поля");
     } catch (e) {
       alert("Не могу прочитать JSON в поле");
-    }
-  });
-
-  if (collabChannel) {
-    collabChannel.onmessage = (event) => {
-      const msg = event.data;
-      if (!msg || msg.type !== "zones") return;
-      if (msg.sessionId !== activeSessionId) return;
-      if (msg.sourceClientId === clientId) return;
-      applyGeoJson(msg.payload, {silent:true});
-      showToast("Получены изменения от другого пользователя");
-    };
-  }
-
-  window.addEventListener("storage", (event) => {
-    if (event.key !== sharedZonesKey() || !event.newValue) return;
-    try {
-      const gj = JSON.parse(event.newValue);
-      applyGeoJson(gj, {silent:true});
-      showToast("Обновлено из общей сессии");
-    } catch (e) {
-      console.error(e);
     }
   });
 
@@ -763,6 +839,7 @@
     l.opacity = opacity01;
     l.overlay.setOpacity(opacity01);
     saveMeta();
+    schedulePublishState("layer-opacity");
   }
 
   async function deleteLayer(id) {
@@ -775,6 +852,7 @@
     if (activeLayerId === id) activeLayerId = layers.length ? layers[0].id : null;
     saveMeta();
     renderLayersList();
+    schedulePublishState("layer-delete");
   }
 
   function renderLayersList() {
@@ -837,7 +915,7 @@
       rename.type = "text";
       rename.value = l.name || "";
       rename.placeholder = "например: Трафарет трафика";
-      rename.oninput = (e) => { e.stopPropagation(); l.name = e.target.value; saveMeta(); };
+      rename.oninput = (e) => { e.stopPropagation(); l.name = e.target.value; saveMeta(); schedulePublishState("layer-rename"); };
       renameWrap.appendChild(rename);
 
       item.appendChild(top);
@@ -862,6 +940,7 @@
     activeLayerId = id;
     saveMeta();
     renderLayersList();
+    schedulePublishState("layer-add");
     showToast("Трафарет добавлен → сделай прозрачность → привяжи по 2 точкам", 2200);
   }
 
@@ -1196,6 +1275,7 @@
     l.overlay.setBounds(bounds);
     l.boundsObj = serializeBounds(bounds);
     saveMeta();
+    schedulePublishState("layer-calibration");
 
     showToast("Привязка применена ✅", 2000);
   }
@@ -1240,6 +1320,7 @@
   refreshState();
 
   loadLayers().then(() => {
+    applySession();
     showToast("Готово. Проект → трафарет → привязка → линии фасада.", 2400);
   });
 </script>
