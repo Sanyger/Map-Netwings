@@ -212,8 +212,13 @@
 <script src="https://cdn.jsdelivr.net/npm/gun/gun.js"></script>
 
 <script>
+<<<<<<< codex/-json-ew2l4h
   const APP_VERSION = "v2026.02.16-4";
   const APP_RELEASE_NOTES = "gun-json-fix";
+=======
+  const APP_VERSION = "v2026.02.16-3";
+  const APP_RELEASE_NOTES = "live-shared-db-gun";
+>>>>>>> main
   const appVersionEl = document.getElementById("appVersion");
   if (appVersionEl) appVersionEl.textContent = `Версия: ${APP_VERSION} • ${APP_RELEASE_NOTES}`;
 
@@ -328,13 +333,18 @@
 
   // ========= Zones =========
   function zonesKey(){ return `netwings_zones_geojson_v5__${activeProjectId}`; }
+  function sharedZonesKey(){ return `netwings_shared_zones_geojson_v1__${activeSessionId}`; }
   const geojsonBox = document.getElementById("geojsonBox");
   const geojsonFile = document.getElementById("geojsonFile");
   const sharedSessionInput = document.getElementById("sharedSessionId");
   const SHARED_SESSION_KEY = "netwings_shared_session_v1";
   const clientId = genId();
+<<<<<<< codex/-json-ew2l4h
   const gunPeers = ["https://gun-manhattan.herokuapp.com/gun", "https://peer.wallie.io/gun", "https://gunjs.herokuapp.com/gun"];
   const gun = (typeof Gun !== "undefined") ? Gun(gunPeers) : null;
+=======
+  const gun = (typeof Gun !== "undefined") ? Gun(["https://gun-manhattan.herokuapp.com/gun"]) : null;
+>>>>>>> main
   const collabRoot = gun ? gun.get("map-netwings").get("rooms") : null;
   let suppressSync = false;
   let isApplyingRemoteState = false;
@@ -390,6 +400,17 @@
     geojsonBox.value = JSON.stringify(gj, null, 2);
     try { localStorage.setItem(zonesKey(), JSON.stringify(gj)); } catch(e) {}
     if (!silent) schedulePublishState("zones");
+<<<<<<< codex/-json-ew2l4h
+  }
+
+  function applyGeoJson(gj, {silent=false} = {}) {
+    suppressSync = true;
+    zonesGroup.clearLayers();
+    addGeoJsonToZonesGroup(gj);
+    updateGeo({silent});
+    suppressSync = false;
+=======
+>>>>>>> main
   }
 
   function applyGeoJson(gj, {silent=false} = {}) {
@@ -400,12 +421,7 @@
     suppressSync = false;
   }
 
-  function loadZones() {
-    const raw = localStorage.getItem(zonesKey());
-    if (!raw) return;
-    try { addGeoJsonToZonesGroup(JSON.parse(raw)); } catch(e) {}
-  }
-
+<<<<<<< codex/-json-ew2l4h
   async function snapshotLayers() {
     const out = [];
     for (const l of layers) {
@@ -477,6 +493,76 @@
     if (!raw || typeof raw !== "object") return null;
     const candidate = raw.payloadJson ? raw.payloadJson : JSON.stringify(raw);
     try { return JSON.parse(candidate); } catch (_) { return null; }
+=======
+  function applyGeoJson(gj, {silent=false} = {}) {
+    suppressSync = true;
+    zonesGroup.clearLayers();
+    addGeoJsonToZonesGroup(gj);
+    updateGeo({silent});
+    suppressSync = false;
+  }
+
+  async function snapshotLayers() {
+    const out = [];
+    for (const l of layers) {
+      const dataUrl = l.dataUrl || await idbGetLayer(activeProjectId, l.id);
+      if (!dataUrl) continue;
+      out.push({
+        id: l.id,
+        name: l.name || "Трафарет",
+        opacity: typeof l.opacity === "number" ? l.opacity : 0.5,
+        boundsObj: l.boundsObj,
+        dataUrl
+      });
+    }
+    return out;
+  }
+
+  async function publishState(reason = "manual") {
+    if (!roomStateNode || isApplyingRemoteState) return;
+    const payload = {
+      sourceClientId: clientId,
+      updatedAt: Date.now(),
+      reason,
+      zones: zonesGroup.toGeoJSON(),
+      layers: await snapshotLayers()
+    };
+    roomStateNode.put(payload);
+  }
+
+  function schedulePublishState(reason = "change") {
+    if (!roomStateNode || suppressSync || isApplyingRemoteState) return;
+    if (publishTimer) clearTimeout(publishTimer);
+    publishTimer = setTimeout(() => {
+      publishTimer = null;
+      publishState(reason);
+    }, 250);
+  }
+
+  async function applyRemoteLayers(remoteLayers) {
+    unloadAllLayersFromMap();
+    for (const item of (remoteLayers || [])) {
+      if (!item?.dataUrl || !item?.boundsObj) continue;
+      await idbPutLayer(activeProjectId, item.id, item.dataUrl);
+      const bounds = deserializeBounds(item.boundsObj);
+      const overlay = L.imageOverlay(item.dataUrl, bounds, {
+        opacity: typeof item.opacity === "number" ? item.opacity : 0.5,
+        interactive: true
+      }).addTo(map);
+      overlay.on("click", () => setActiveLayer(item.id));
+      layers.push({
+        id: item.id,
+        name: item.name || "Трафарет",
+        opacity: typeof item.opacity === "number" ? item.opacity : 0.5,
+        boundsObj: item.boundsObj,
+        overlay,
+        dataUrl: item.dataUrl
+      });
+    }
+    activeLayerId = layers[0]?.id || null;
+    saveMeta();
+    renderLayersList();
+>>>>>>> main
   }
 
   function subscribeRoomState() {
@@ -484,6 +570,7 @@
     if (roomStateNode) roomStateNode.off();
     roomStateNode = collabRoot.get(activeSessionId).get("state");
     roomStateNode.on(async (state) => {
+<<<<<<< codex/-json-ew2l4h
       const decoded = decodeState(state);
       if (!decoded) return;
       if (decoded.sourceClientId === clientId) return;
@@ -493,6 +580,16 @@
       try {
         if (decoded.zones) applyGeoJson(decoded.zones, {silent:true});
         await applyRemoteLayers(decoded.layers || []);
+=======
+      if (!state || typeof state !== "object") return;
+      if (state.sourceClientId === clientId) return;
+      if (!state.updatedAt || state.updatedAt <= lastRemoteUpdatedAt) return;
+      lastRemoteUpdatedAt = state.updatedAt;
+      isApplyingRemoteState = true;
+      try {
+        if (state.zones) applyGeoJson(state.zones, {silent:true});
+        await applyRemoteLayers(state.layers || []);
+>>>>>>> main
         showToast("Получено обновление от другого пользователя", 1800);
       } catch (e) {
         console.error(e);
@@ -512,6 +609,7 @@
     subscribeRoomState();
 
     roomStateNode.once(async (state) => {
+<<<<<<< codex/-json-ew2l4h
       const decoded = decodeState(state);
       if (decoded?.updatedAt && decoded?.sourceClientId !== clientId) {
         lastRemoteUpdatedAt = decoded.updatedAt;
@@ -519,6 +617,14 @@
         try {
           if (decoded.zones) applyGeoJson(decoded.zones, {silent:true});
           await applyRemoteLayers(decoded.layers || []);
+=======
+      if (state?.updatedAt && state?.sourceClientId !== clientId) {
+        lastRemoteUpdatedAt = state.updatedAt;
+        isApplyingRemoteState = true;
+        try {
+          if (state.zones) applyGeoJson(state.zones, {silent:true});
+          await applyRemoteLayers(state.layers || []);
+>>>>>>> main
           showToast(`Сессия: ${sid} (подтянул актуальную карту)`, 2200);
         } finally {
           isApplyingRemoteState = false;
