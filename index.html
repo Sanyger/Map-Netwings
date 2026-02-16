@@ -159,10 +159,16 @@
 
     <div class="card">
       <div class="label">Экспорт / импорт зон (GeoJSON)</div>
+      <div class="small">ID общей сессии (одинаковый ID = общие линии между вкладками/пользователями).</div>
+      <div class="row" style="margin-top:8px">
+        <input id="sharedSessionId" type="text" value="main-room" placeholder="например: cafe-spb-01">
+        <button class="mini" id="btnApplySession" style="flex:0 0 auto">Подключить</button>
+      </div>
       <div class="row">
         <button class="btn" id="btnExport">⬇️ Экспорт</button>
         <button class="btn" id="btnImport">⬆️ Импорт</button>
       </div>
+      <input id="geojsonFile" type="file" accept=".json,.geojson,application/json,application/geo+json" style="display:none">
       <textarea id="geojsonBox" spellcheck="false" style="margin-top:10px"></textarea>
     </div>
   </div>
@@ -314,7 +320,16 @@
 
   // ========= Zones =========
   function zonesKey(){ return `netwings_zones_geojson_v5__${activeProjectId}`; }
+  function sharedZonesKey(){ return `netwings_shared_zones_geojson_v1__${activeSessionId}`; }
   const geojsonBox = document.getElementById("geojsonBox");
+  const geojsonFile = document.getElementById("geojsonFile");
+  const sharedSessionInput = document.getElementById("sharedSessionId");
+  const SHARED_SESSION_KEY = "netwings_shared_session_v1";
+  const clientId = genId();
+  const collabChannel = (typeof BroadcastChannel !== "undefined") ? new BroadcastChannel("netwings_collab_v1") : null;
+  let suppressSync = false;
+  let activeSessionId = localStorage.getItem(SHARED_SESSION_KEY) || "main-room";
+  sharedSessionInput.value = activeSessionId;
 
   const ZONES = {
     great:  { label: "1000+/ч",    score: 100, color: "#ff2d2d" },
@@ -357,85 +372,129 @@
     layer.eachLayer(l => { attachDeleteHandlers(l); zonesGroup.addLayer(l); });
   }
 
-  function updateGeo() {
+  function updateGeo({silent=false} = {}) {
     const gj = zonesGroup.toGeoJSON();
     geojsonBox.value = JSON.stringify(gj, null, 2);
     try { localStorage.setItem(zonesKey(), JSON.stringify(gj)); } catch(e) {}
+    try { localStorage.setItem(sharedZonesKey(), JSON.stringify(gj)); } catch(e) {}
+    if (!silent) {
+      if (collabChannel) collabChannel.postMessage({ type: "zones", sessionId: activeSessionId, sourceClientId: clientId, payload: gj });
+    }
+  }
+
+  function applyGeoJson(gj, {silent=false} = {}) {
+    suppressSync = true;
+    zonesGroup.clearLayers();
+    addGeoJsonToZonesGroup(gj);
+    updateGeo({silent});
+    suppressSync = false;
+  }
+
+  function loadZonesFromSessionOrProject() {
+    const fromSession = localStorage.getItem(sharedZonesKey());
+    if (fromSession) {
+      try { addGeoJsonToZonesGroup(JSON.parse(fromSession)); return; } catch(e) {}
+    }
+    const fromProject = localStorage.getItem(zonesKey());
+    if (!fromProject) return;
+    try { addGeoJsonToZonesGroup(JSON.parse(fromProject)); } catch(e) {}
   }
 
   function loadZones() {
-    const raw = localStorage.getItem(zonesKey());
-    if (!raw) return;
-    try { addGeoJsonToZonesGroup(JSON.parse(raw)); } catch(e) {}
+    loadZonesFromSessionOrProject();
   }
+
+  function applySession() {
+    const sid = (sharedSessionInput.value || "").trim();
+    if (!sid) { alert("Укажи ID общей сессии"); return; }
+    activeSessionId = sid;
+    localStorage.setItem(SHARED_SESSION_KEY, sid);
+    zonesGroup.clearLayers();
+    loadZones();
+    updateGeo({silent:true});
+    showToast(`Сессия: ${sid}`);
+  }
+
+  document.getElementById("btnApplySession").onclick = applySession;
 
   document.getElementById("btnExport").onclick = () => {
-  try {
-    const gj = zonesGroup.toGeoJSON();
-    const text = JSON.stringify(gj, null, 2);
+    try {
+      const gj = zonesGroup.toGeoJSON();
+      const text = JSON.stringify(gj, null, 2);
+      geojsonBox.value = text;
+      localStorage.setItem(zonesKey(), JSON.stringify(gj));
+      localStorage.setItem(sharedZonesKey(), JSON.stringify(gj));
 
-    // 1) заполняем поле
-    geojsonBox.value = text;
-
-    // 2) сохраняем в localStorage
-   document.getElementById("btnExport").onclick = () => {
-  try {
-    const gj = zonesGroup.toGeoJSON();
-    const text = JSON.stringify(gj, null, 2);
-
-    // 1) заполняем поле
-    geojsonBox.value = text;
-
-    // 2) сохраняем в localStorage (в ключ текущего проекта)
-    localStorage.setItem(zonesKey(), JSON.stringify(gj));
-
-    // 3) скачиваем файл
-    const blob = new Blob([text], { type: "application/geo+json;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "zones.geojson";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-
-    setTimeout(() => URL.revokeObjectURL(url), 500);
-
-    showToast("GeoJSON экспортирован");
-  } catch (e) {
-    console.error(e);
-    alert("Экспорт не сработал. Открой консоль (F12) и пришли ошибку.");
-  }
-};
-
-
-    // 3) скачиваем файл
-    const blob = new Blob([text], { type: "application/geo+json;charset=utf-8" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "zones.geojson";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 500);
-
-    showToast("GeoJSON экспортирован");
-  } catch (e) {
-    console.error(e);
-    alert("Экспорт не сработал. Открой консоль (F12) и пришли ошибку.");
-  }
-};
+      const blob = new Blob([text], { type: "application/geo+json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `zones-${activeSessionId}.geojson`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 500);
+      showToast("GeoJSON экспортирован");
+    } catch (e) {
+      console.error(e);
+      alert("Экспорт не сработал. Открой консоль (F12) и пришли ошибку.");
+    }
+  };
 
   document.getElementById("btnImport").onclick = () => {
-    let gj;
-    try { gj = JSON.parse(geojsonBox.value || ""); }
-    catch(e){ alert("Не могу прочитать JSON."); return; }
-    zonesGroup.clearLayers();
-    addGeoJsonToZonesGroup(gj);
-    updateGeo();
-    showToast("Импортировано");
+    geojsonFile.click();
   };
+
+  geojsonFile.onchange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    try {
+      const text = await file.text();
+      const gj = JSON.parse(text);
+      geojsonBox.value = JSON.stringify(gj, null, 2);
+      applyGeoJson(gj);
+      showToast("Импортировано из файла");
+    } catch (err) {
+      console.error(err);
+      alert("Не удалось импортировать файл JSON/GeoJSON");
+    } finally {
+      geojsonFile.value = "";
+    }
+  };
+
+  geojsonBox.addEventListener("change", () => {
+    if (suppressSync) return;
+    if (!geojsonBox.value.trim()) return;
+    try {
+      const gj = JSON.parse(geojsonBox.value);
+      applyGeoJson(gj);
+      showToast("Импортировано из поля");
+    } catch (e) {
+      alert("Не могу прочитать JSON в поле");
+    }
+  });
+
+  if (collabChannel) {
+    collabChannel.onmessage = (event) => {
+      const msg = event.data;
+      if (!msg || msg.type !== "zones") return;
+      if (msg.sessionId !== activeSessionId) return;
+      if (msg.sourceClientId === clientId) return;
+      applyGeoJson(msg.payload, {silent:true});
+      showToast("Получены изменения от другого пользователя");
+    };
+  }
+
+  window.addEventListener("storage", (event) => {
+    if (event.key !== sharedZonesKey() || !event.newValue) return;
+    try {
+      const gj = JSON.parse(event.newValue);
+      applyGeoJson(gj, {silent:true});
+      showToast("Обновлено из общей сессии");
+    } catch (e) {
+      console.error(e);
+    }
+  });
 
   // ========= Level buttons =========
   function clearZoneButtonsUI() {
