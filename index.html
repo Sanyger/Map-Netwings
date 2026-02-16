@@ -328,6 +328,7 @@
 
   // ========= Zones =========
   function zonesKey(){ return `netwings_zones_geojson_v5__${activeProjectId}`; }
+  function sharedZonesKey(){ return `netwings_shared_zones_geojson_v1__${activeSessionId}`; }
   const geojsonBox = document.getElementById("geojsonBox");
   const geojsonFile = document.getElementById("geojsonFile");
   const sharedSessionInput = document.getElementById("sharedSessionId");
@@ -399,10 +400,12 @@
     suppressSync = false;
   }
 
-  function loadZones() {
-    const raw = localStorage.getItem(zonesKey());
-    if (!raw) return;
-    try { addGeoJsonToZonesGroup(JSON.parse(raw)); } catch(e) {}
+  function applyGeoJson(gj, {silent=false} = {}) {
+    suppressSync = true;
+    zonesGroup.clearLayers();
+    addGeoJsonToZonesGroup(gj);
+    updateGeo({silent});
+    suppressSync = false;
   }
 
   async function snapshotLayers() {
