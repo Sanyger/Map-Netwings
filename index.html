@@ -482,9 +482,8 @@
     try {
       const text = await file.text();
       geojsonBox.value = text;
-      const payload = normalizeImportPayload(JSON.parse(text));
-      await applyImportPayload(payload);
-      showToast("Импорт завершён: карта восстановлена");
+      const imported = await tryImportFromText(text);
+      if (!imported) throw new Error("unsupported import format");
     } catch (err) {
       console.error(err);
       alert("Не удалось импортировать файл.");
@@ -493,24 +492,28 @@
     }
   };
 
+  async function tryImportFromText(text) {
+    if (!text) return false;
+    let payload;
+    try {
+      payload = normalizeImportPayload(JSON.parse(text));
+    } catch (_) {
+      return false;
+    }
+
+    await applyImportPayload(payload);
+    showToast("Импорт завершён: карта восстановлена");
+    return true;
+  }
+
   document.getElementById("btnImport").onclick = async () => {
     const text = (geojsonBox.value || "").trim();
 
-    // Если в поле уже вставлен ПОЛНЫЙ пакет экспорта — импортируем сразу.
-    if (text) {
-      try {
-        const payload = normalizeImportPayload(JSON.parse(text));
-        if (payload?.format === "netwings-map-export-v1") {
-          await applyImportPayload(payload);
-          showToast("Импорт завершён: карта восстановлена");
-          return;
-        }
-      } catch (_) {
-        // Игнорируем и переходим к выбору файла.
-      }
-    }
+    // 1) Если в поле вставлен JSON — пробуем импортировать сразу (и пакет, и legacy GeoJSON).
+    const imported = await tryImportFromText(text);
+    if (imported) return;
 
-    // Иначе просим выбрать файл экспорта (в нём есть зоны + скрины + геопозиция).
+    // 2) Иначе открываем выбор файла экспорта.
     importFile.click();
   };
 
