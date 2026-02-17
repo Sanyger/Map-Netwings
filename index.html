@@ -492,6 +492,11 @@
 
   let importMode = "replace"; // replace | merge
 
+  function openImportDialog(mode) {
+    importMode = mode;
+    importFile.click();
+  }
+
   importFile.onchange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return; // пользователь нажал "Отмена"
@@ -510,15 +515,8 @@
     }
   };
 
-  document.getElementById("btnImport").onclick = () => {
-    importMode = "replace";
-    importFile.click();
-  };
-
-  document.getElementById("btnImportMerge").onclick = () => {
-    importMode = "merge";
-    importFile.click();
-  };
+  document.getElementById("btnImport").onclick = () => openImportDialog("replace");
+  document.getElementById("btnImportMerge").onclick = () => openImportDialog("merge");
 
   // ========= Level buttons =========
   function clearZoneButtonsUI() {
