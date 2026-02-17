@@ -482,8 +482,9 @@
     try {
       const text = await file.text();
       geojsonBox.value = text;
-      const imported = await tryImportFromText(text);
-      if (!imported) throw new Error("unsupported import format");
+      const payload = normalizeImportPayload(JSON.parse(text));
+      await applyImportPayload(payload);
+      showToast("Импорт завершён: карта восстановлена");
     } catch (err) {
       console.error(err);
       alert("Не удалось импортировать файл.");
@@ -492,29 +493,19 @@
     }
   };
 
-  async function tryImportFromText(text) {
-    if (!text) return false;
-    let payload;
-    try {
-      payload = normalizeImportPayload(JSON.parse(text));
-    } catch (_) {
-      return false;
-    }
-
-    await applyImportPayload(payload);
-    showToast("Импорт завершён: карта восстановлена");
-    return true;
-  }
-
   document.getElementById("btnImport").onclick = async () => {
-    const text = (geojsonBox.value || "").trim();
-
-    // 1) Если в поле вставлен JSON — пробуем импортировать сразу (и пакет, и legacy GeoJSON).
-    const imported = await tryImportFromText(text);
-    if (imported) return;
-
-    // 2) Иначе открываем выбор файла экспорта.
-    importFile.click();
+    const hasText = !!(geojsonBox.value || "").trim();
+    if (!hasText) {
+      importFile.click();
+      return;
+    }
+    try {
+      const payload = normalizeImportPayload(JSON.parse(geojsonBox.value));
+      await applyImportPayload(payload);
+      showToast("Импорт завершён: карта восстановлена");
+    } catch (e) {
+      alert("Не могу прочитать JSON. Загрузите файл экспорта или вставьте валидный JSON.");
+    }
   };
 
   // ========= Level buttons =========
