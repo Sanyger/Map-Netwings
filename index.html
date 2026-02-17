@@ -473,11 +473,6 @@
     }
   }
 
-  async function applyImportPayload(payload, opts = {}) {
-    return applyImportPayloadCanonical(payload, opts);
-  }
-
-
   document.getElementById("btnExport").onclick = async () => {
     try {
       const payload = await buildExportPayload();
@@ -517,7 +512,7 @@
       const text = await file.text();
       geojsonBox.value = text;
       const payload = normalizeImportPayload(JSON.parse(text));
-      await applyImportPayload(payload, { merge: importMode === "merge" });
+      await applyImportPayloadCanonical(payload, { merge: importMode === "merge" });
       showToast(importMode === "merge" ? "Импорт поверх завершён" : "Импорт завершён: карта восстановлена");
     } catch (err) {
       console.error(err);
