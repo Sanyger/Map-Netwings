@@ -411,6 +411,8 @@
     throw new Error("unsupported");
   }
 
+  // Каноничная версия импорта: поддерживает replace + merge.
+  // В случае конфликтов с main оставлять именно эту реализацию.
   async function applyImportPayload(payload, opts = {}) {
     const merge = !!opts.merge;
 
