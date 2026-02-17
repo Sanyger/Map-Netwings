@@ -438,8 +438,7 @@
 
   // Каноничная версия импорта: поддерживает replace + merge.
   // В случае конфликтов с main оставлять именно эту реализацию.
-  async function applyImportPayload(payload, opts = {}) {
-    const merge = !!opts.merge;
+  async function applyImportPayload(payload, { merge = false } = {}) {
 
     if (!merge) zonesGroup.clearLayers();
     if (payload?.zones?.type === "FeatureCollection") addGeoJsonToZonesGroup(payload.zones);
