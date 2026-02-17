@@ -158,13 +158,14 @@
     </div>
 
     <div class="card">
-      <div class="label">Экспорт / импорт карты (JSON)</div>
+      <div class="label">Экспорт / импорт карты (JSON) <span class="pill">v2: replace + merge</span></div>
       <div class="row">
         <button class="btn" id="btnExport">⬇️ Экспорт</button>
         <button class="btn" id="btnImport">⬆️ Импорт</button>
         <button class="btn" id="btnImportMerge">🧩 Импорт поверх</button>
       </div>
       <input id="importFile" type="file" accept=".json,.geojson,application/json,application/geo+json" style="display:none">
+      <div class="small" style="margin-top:8px">Импорт: заменить карту • Импорт поверх: объединить со скринами и зонами.</div>
       <textarea id="geojsonBox" spellcheck="false" style="margin-top:10px"></textarea>
     </div>
   </div>
