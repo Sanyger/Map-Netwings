@@ -158,14 +158,13 @@
     </div>
 
     <div class="card">
-      <div class="label">Экспорт / импорт карты (JSON) <span class="pill">v2: replace + merge</span></div>
+      <div class="label">Экспорт / импорт карты (JSON)</div>
       <div class="row">
         <button class="btn" id="btnExport">⬇️ Экспорт</button>
         <button class="btn" id="btnImport">⬆️ Импорт</button>
         <button class="btn" id="btnImportMerge">🧩 Импорт поверх</button>
       </div>
       <input id="importFile" type="file" accept=".json,.geojson,application/json,application/geo+json" style="display:none">
-      <div class="small" style="margin-top:8px">Импорт: заменить карту • Импорт поверх: объединить со скринами и зонами.</div>
       <textarea id="geojsonBox" spellcheck="false" style="margin-top:10px"></textarea>
     </div>
   </div>
@@ -437,10 +436,7 @@
     };
   }
 
-  // ===== BEGIN CANONICAL IMPORT BLOCK (KEEP THIS ON MERGE) =====
-  // Каноничная версия импорта: поддерживает replace + merge.
-  // В случае конфликтов с main оставлять именно эту реализацию.
-  async function applyImportPayloadCanonical(payload, { merge = false } = {}) {
+  async function applyImportPayload(payload, { merge = false } = {}) {
 
     if (!merge) zonesGroup.clearLayers();
     if (payload?.zones?.type === "FeatureCollection") addGeoJsonToZonesGroup(payload.zones);
@@ -474,7 +470,6 @@
       map.setView([c.lat, c.lng], z);
     }
   }
-  // ===== END CANONICAL IMPORT BLOCK =====
 
   document.getElementById("btnExport").onclick = async () => {
     try {
@@ -515,7 +510,7 @@
       const text = await file.text();
       geojsonBox.value = text;
       const payload = normalizeImportPayload(JSON.parse(text));
-      await applyImportPayloadCanonical(payload, { merge: importMode === "merge" });
+      await applyImportPayload(payload, { merge: importMode === "merge" });
       showToast(importMode === "merge" ? "Импорт поверх завершён" : "Импорт завершён: карта восстановлена");
     } catch (err) {
       console.error(err);
