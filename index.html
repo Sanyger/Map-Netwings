@@ -578,19 +578,60 @@
     refreshState();
   };
 
-  function makeSymmetricFacadePolygon(lineFeature, widthMeters) {
-    const halfWidthKm = (widthMeters / 2) / 1000;
-    return turf.buffer(lineFeature, halfWidthKm, { units: "kilometers" });
+  function getLongestLineCoords(feature) {
+    if (!feature?.geometry) throw new Error("OFFSET_EMPTY_GEOMETRY");
+    const { type, coordinates } = feature.geometry;
+
+    if (type === "LineString") return coordinates;
+
+    if (type === "MultiLineString") {
+      if (!Array.isArray(coordinates) || !coordinates.length) throw new Error("OFFSET_EMPTY_GEOMETRY");
+
+      let longest = null;
+      let longestLen = -1;
+      for (const part of coordinates) {
+        if (!Array.isArray(part) || part.length < 2) continue;
+        const len = turf.length(turf.lineString(part), { units: "kilometers" });
+        if (len > longestLen) {
+          longestLen = len;
+          longest = part;
+        }
+      }
+      if (longest) return longest;
+    }
+
+    throw new Error("OFFSET_TOO_COMPLEX");
   }
 
-  function makeProps(zoneKey) {
+  function makeCorridorPolygonFromOffsets(lineFeature, widthMeters) {
+    const halfWidthKm = (widthMeters / 2) / 1000;
+    const leftOffset = turf.lineOffset(lineFeature, +halfWidthKm, { units: "kilometers" });
+    const rightOffset = turf.lineOffset(lineFeature, -halfWidthKm, { units: "kilometers" });
+
+    const leftCoords = getLongestLineCoords(leftOffset);
+    const rightCoords = getLongestLineCoords(rightOffset);
+
+    if (leftCoords.length < 2 || rightCoords.length < 2) throw new Error("OFFSET_TOO_SHORT");
+
+    const ring = [...leftCoords, ...[...rightCoords].reverse()];
+    const first = ring[0];
+    const last = ring[ring.length - 1];
+
+    if (!first || !last) throw new Error("OFFSET_EMPTY_GEOMETRY");
+    if (first[0] !== last[0] || first[1] !== last[1]) ring.push([...first]);
+    if (ring.length < 4) throw new Error("OFFSET_TOO_SHORT");
+
+    return turf.polygon([ring]);
+  }
+
+  function makeProps(zoneKey, widthMeters) {
     const z = ZONES[zoneKey];
     return {
       zone_type: zoneKey,
       zone_label: z.label,
       zone_score: z.score,
-      mode: "street_facade_symmetric",
-      facade_width_m: parseStreetWidthMeters()
+      mode: "street_facade_corridor",
+      facade_width_m: widthMeters
     };
   }
 
@@ -603,8 +644,14 @@
 
     const line = event.layer.toGeoJSON();
     let poly;
-    try { poly = makeSymmetricFacadePolygon(line, w); }
-    catch (e) { alert("Не смог построить полосу. Нарисуй линию чуть длиннее."); return; }
+    try { poly = makeCorridorPolygonFromOffsets(line, w); }
+    catch (e) {
+      const msg = e?.message === "OFFSET_TOO_COMPLEX"
+        ? "Слишком сложная линия, нарисуй чуть проще"
+        : "Не смог построить полосу. Нарисуй линию чуть длиннее.";
+      showToast(msg, 2200);
+      return;
+    }
 
     const polyLayer = L.geoJSON(poly, {
       style: { color: z.color, weight: 2, fillColor: z.color, fillOpacity: 0.18 }
@@ -612,7 +659,7 @@
 
     polyLayer.eachLayer(l => {
       l.feature = l.feature || { type:"Feature", properties:{}, geometry:null };
-      Object.assign(l.feature.properties, makeProps(activeZoneKey));
+      Object.assign(l.feature.properties, makeProps(activeZoneKey, w));
       attachDeleteHandlers(l);
       zonesGroup.addLayer(l);
 
