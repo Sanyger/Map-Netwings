@@ -158,11 +158,13 @@
     </div>
 
     <div class="card">
-      <div class="label">Экспорт / импорт зон (GeoJSON)</div>
+      <div class="label">Экспорт / импорт карты (JSON)</div>
       <div class="row">
         <button class="btn" id="btnExport">⬇️ Экспорт</button>
         <button class="btn" id="btnImport">⬆️ Импорт</button>
+        <button class="btn" id="btnImportMerge">🧩 Импорт поверх</button>
       </div>
+      <input id="importFile" type="file" accept=".json,.geojson,application/json,application/geo+json" style="display:none">
       <textarea id="geojsonBox" spellcheck="false" style="margin-top:10px"></textarea>
     </div>
   </div>
@@ -369,72 +371,153 @@
     try { addGeoJsonToZonesGroup(JSON.parse(raw)); } catch(e) {}
   }
 
-  document.getElementById("btnExport").onclick = () => {
-  try {
-    const gj = zonesGroup.toGeoJSON();
-    const text = JSON.stringify(gj, null, 2);
+  const importFile = document.getElementById("importFile");
 
-    // 1) заполняем поле
-    geojsonBox.value = text;
+  async function buildExportPayload() {
+    const mapCenter = map.getCenter();
+    const layersExport = await Promise.all(layers.map(async (l) => {
+      const dataUrl = l.dataUrl || await idbGetLayer(activeProjectId, l.id);
+      return {
+        id: l.id,
+        name: l.name,
+        opacity: l.opacity,
+        bounds: l.boundsObj,
+        dataUrl: dataUrl || ""
+      };
+    }));
 
-    // 2) сохраняем в localStorage
-document.getElementById("btnExport").onclick = () => {
-  try {
-    const gj = zonesGroup.toGeoJSON();
-    const text = JSON.stringify(gj, null, 2);
-
-    // 1) заполняем поле
-    geojsonBox.value = text;
-
-    // 2) сохраняем в localStorage (в ключ текущего проекта)
-    localStorage.setItem(zonesKey(), JSON.stringify(gj));
-
-    // 3) скачиваем файл
-    const blob = new Blob([text], { type: "application/geo+json;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = "zones.geojson";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-
-    setTimeout(() => URL.revokeObjectURL(url), 500);
-
-    showToast("GeoJSON экспортирован");
-  } catch (e) {
-    console.error(e);
-    alert("Экспорт не сработал. Открой консоль (F12) и пришли ошибку.");
+    return {
+      format: "netwings-map-export-v1",
+      exportedAt: new Date().toISOString(),
+      project: {
+        id: activeProjectId,
+        name: (projects.find(p => p.id === activeProjectId)?.name) || "Проект"
+      },
+      mapView: {
+        center: { lat: mapCenter.lat, lng: mapCenter.lng },
+        zoom: map.getZoom()
+      },
+      zones: zonesGroup.toGeoJSON(),
+      layers: layersExport,
+      activeLayerId: activeLayerId || null
+    };
   }
-};
 
-
-    // 3) скачиваем файл
-    const blob = new Blob([text], { type: "application/geo+json;charset=utf-8" });
-    const a = document.createElement("a");
-    a.href = URL.createObjectURL(blob);
-    a.download = "zones.geojson";
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(a.href), 500);
-
-    showToast("GeoJSON экспортирован");
-  } catch (e) {
-    console.error(e);
-    alert("Экспорт не сработал. Открой консоль (F12) и пришли ошибку.");
+  function normalizeImportPayload(parsed) {
+    if (parsed?.format === "netwings-map-export-v1") return parsed;
+    if (parsed?.type === "FeatureCollection") {
+      return { format: "legacy-geojson", zones: parsed, layers: [], activeLayerId: null };
+    }
+    throw new Error("unsupported");
   }
-};
+
+  async function applyImportPayload(payload, opts = {}) {
+    const merge = !!opts.merge;
+
+    if (!merge) zonesGroup.clearLayers();
+    if (payload?.zones?.type === "FeatureCollection") addGeoJsonToZonesGroup(payload.zones);
+    updateGeo();
+
+    if (!merge) {
+      unloadAllLayersFromMap();
+      await deleteProjectImages(activeProjectId);
+    }
+
+    const existingIds = new Set(layers.map(l => l.id));
+    const importedLayers = Array.isArray(payload?.layers) ? payload.layers : [];
+    for (const src of importedLayers) {
+      if (!src?.dataUrl || !src?.bounds?.sw || !src?.bounds?.ne) continue;
+
+      let id = src.id || genId();
+      while (existingIds.has(id)) id = genId();
+      existingIds.add(id);
+      await idbPutLayer(activeProjectId, id, src.dataUrl);
+
+      const bounds = deserializeBounds(src.bounds);
+      const opacity = (typeof src.opacity === "number") ? src.opacity : 0.5;
+      const overlay = L.imageOverlay(src.dataUrl, bounds, { opacity, interactive: true }).addTo(map);
+      overlay.on("click", () => setActiveLayer(id));
+
+      layers.push({
+        id,
+        name: src.name || "Трафарет",
+        opacity,
+        boundsObj: src.bounds,
+        overlay,
+        dataUrl: src.dataUrl
+      });
+    }
+
+    const requestedActive = payload?.activeLayerId || "";
+    if (!merge) {
+      activeLayerId = (requestedActive && getLayer(requestedActive)) ? requestedActive : (layers[0]?.id || null);
+    } else if (!activeLayerId) {
+      activeLayerId = (requestedActive && getLayer(requestedActive)) ? requestedActive : (layers[0]?.id || null);
+    }
+
+    saveMeta();
+    renderLayersList();
+
+    const c = payload?.mapView?.center;
+    const z = payload?.mapView?.zoom;
+    if (!merge && c && Number.isFinite(c.lat) && Number.isFinite(c.lng) && Number.isFinite(z)) {
+      map.setView([c.lat, c.lng], z);
+    }
+  }
+
+  document.getElementById("btnExport").onclick = async () => {
+    try {
+      const payload = await buildExportPayload();
+      const text = JSON.stringify(payload, null, 2);
+
+      geojsonBox.value = text;
+      localStorage.setItem(zonesKey(), JSON.stringify(payload.zones || { type: "FeatureCollection", features: [] }));
+
+      const blob = new Blob([text], { type: "application/json;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `map-export-${new Date().toISOString().slice(0, 19).replace(/[T:]/g, "-")}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 500);
+
+      showToast("Карта экспортирована (зоны + скрины + привязка)");
+    } catch (e) {
+      console.error(e);
+      alert("Экспорт не сработал. Открой консоль (F12) и пришли ошибку.");
+    }
+  };
+
+  let importMode = "replace"; // replace | merge
+
+  importFile.onchange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return; // пользователь нажал "Отмена"
+    try {
+      const text = await file.text();
+      geojsonBox.value = text;
+      const payload = normalizeImportPayload(JSON.parse(text));
+      await applyImportPayload(payload, { merge: importMode === "merge" });
+      showToast(importMode === "merge" ? "Импорт поверх завершён" : "Импорт завершён: карта восстановлена");
+    } catch (err) {
+      console.error(err);
+      alert("Не удалось импортировать файл.");
+    } finally {
+      importFile.value = "";
+      importMode = "replace";
+    }
+  };
 
   document.getElementById("btnImport").onclick = () => {
-    let gj;
-    try { gj = JSON.parse(geojsonBox.value || ""); }
-    catch(e){ alert("Не могу прочитать JSON."); return; }
-    zonesGroup.clearLayers();
-    addGeoJsonToZonesGroup(gj);
-    updateGeo();
-    showToast("Импортировано");
+    importMode = "replace";
+    importFile.click();
+  };
+
+  document.getElementById("btnImportMerge").onclick = () => {
+    importMode = "merge";
+    importFile.click();
   };
 
   // ========= Level buttons =========
