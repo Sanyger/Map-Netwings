@@ -141,12 +141,7 @@
     </div>
 
     <div class="card">
-      <div class="label">Линии фасада (одна сторона)</div>
-      <div class="row">
-        <button class="mini ok active" id="sideLeft">⬅️ Слева по ходу</button>
-        <button class="mini ok" id="sideRight">➡️ Справа по ходу</button>
-        <button class="mini primary" id="btnFlip">🔁 Flip</button>
-      </div>
+      <div class="label">Линии фасада (двусторонняя зона)</div>
 
       <div style="margin-top:10px">
         <div class="small">Ширина захвата фасада (м)</div>
@@ -542,7 +537,6 @@
   const btnStreetMode = document.getElementById("btnStreetMode");
 
   let streetMode = false;
-  let streetSide = "left";
   let streetDrawer = null;
 
   let isCalibrating = false;
@@ -550,19 +544,8 @@
   function refreshState() {
     const lvl = activeZoneKey ? ZONES[activeZoneKey].label : "не выбран";
     if (!streetMode) stateLine.textContent = `выключено • уровень: ${lvl}`;
-    else stateLine.textContent = `линии включены • сторона: ${streetSide === "left" ? "слева по ходу" : "справа по ходу"} • уровень: ${lvl}`;
+    else stateLine.textContent = `линии включены • двусторонняя зона • уровень: ${lvl}`;
   }
-
-  const sideLeftBtn = document.getElementById("sideLeft");
-  const sideRightBtn = document.getElementById("sideRight");
-  function syncSideUI() {
-    sideLeftBtn.classList.toggle("active", streetSide === "left");
-    sideRightBtn.classList.toggle("active", streetSide === "right");
-    refreshState();
-  }
-  sideLeftBtn.onclick = () => { streetSide = "left"; syncSideUI(); showToast("Сторона: слева по ходу"); };
-  sideRightBtn.onclick = () => { streetSide = "right"; syncSideUI(); showToast("Сторона: справа по ходу"); };
-  document.getElementById("btnFlip").onclick = () => { streetSide = (streetSide === "left") ? "right" : "left"; syncSideUI(); showToast("Flip"); };
 
   function parseStreetWidthMeters() {
     const w = Number(String(streetWidthEl.value || "15").trim().replace(",", "."));
@@ -595,11 +578,9 @@
     refreshState();
   };
 
-  function makeOneSidedFacadePolygon(lineFeature, widthMeters, side) {
-    const halfKm = (widthMeters / 2) / 1000;
-    const sign = (side === "left") ? -1 : +1; // фикс слева/справа
-    const offsetLine = turf.lineOffset(lineFeature, sign * halfKm, { units: "kilometers" });
-    return turf.buffer(offsetLine, halfKm, { units: "kilometers" });
+  function makeSymmetricFacadePolygon(lineFeature, widthMeters) {
+    const halfWidthKm = (widthMeters / 2) / 1000;
+    return turf.buffer(lineFeature, halfWidthKm, { units: "kilometers" });
   }
 
   function makeProps(zoneKey) {
@@ -608,8 +589,7 @@
       zone_type: zoneKey,
       zone_label: z.label,
       zone_score: z.score,
-      mode: "street_facade",
-      street_side: (streetSide === "left") ? "left_of_draw" : "right_of_draw",
+      mode: "street_facade_symmetric",
       facade_width_m: parseStreetWidthMeters()
     };
   }
@@ -623,7 +603,7 @@
 
     const line = event.layer.toGeoJSON();
     let poly;
-    try { poly = makeOneSidedFacadePolygon(line, w, streetSide); }
+    try { poly = makeSymmetricFacadePolygon(line, w); }
     catch (e) { alert("Не смог построить полосу. Нарисуй линию чуть длиннее."); return; }
 
     const polyLayer = L.geoJSON(poly, {
@@ -635,6 +615,14 @@
       Object.assign(l.feature.properties, makeProps(activeZoneKey));
       attachDeleteHandlers(l);
       zonesGroup.addLayer(l);
+
+      const lineLayer = L.geoJSON(line, {
+        interactive: false,
+        style: { color: z.color, weight: 5, opacity: 1 }
+      }).addTo(map);
+      l.on("remove", () => {
+        if (map.hasLayer(lineLayer)) map.removeLayer(lineLayer);
+      });
     });
 
     updateGeo();
