@@ -493,9 +493,24 @@
     }
   };
 
-  document.getElementById("btnImport").onclick = () => {
-    // Импорт должен восстанавливать карту из файла, выгруженного экспортом.
-    // Не зависим от содержимого textarea, т.к. она часто содержит только GeoJSON зон.
+  document.getElementById("btnImport").onclick = async () => {
+    const text = (geojsonBox.value || "").trim();
+
+    // Если в поле уже вставлен ПОЛНЫЙ пакет экспорта — импортируем сразу.
+    if (text) {
+      try {
+        const payload = normalizeImportPayload(JSON.parse(text));
+        if (payload?.format === "netwings-map-export-v1") {
+          await applyImportPayload(payload);
+          showToast("Импорт завершён: карта восстановлена");
+          return;
+        }
+      } catch (_) {
+        // Игнорируем и переходим к выбору файла.
+      }
+    }
+
+    // Иначе просим выбрать файл экспорта (в нём есть зоны + скрины + геопозиция).
     importFile.click();
   };
 
