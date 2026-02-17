@@ -411,6 +411,31 @@
     throw new Error("unsupported");
   }
 
+
+  async function createImportedOverlayLayer(src, existingIds) {
+    if (!src?.dataUrl || !src?.bounds?.sw || !src?.bounds?.ne) return null;
+
+    let id = src.id || genId();
+    while (existingIds.has(id)) id = genId();
+    existingIds.add(id);
+
+    await idbPutLayer(activeProjectId, id, src.dataUrl);
+
+    const bounds = deserializeBounds(src.bounds);
+    const opacity = (typeof src.opacity === "number") ? src.opacity : 0.5;
+    const overlay = L.imageOverlay(src.dataUrl, bounds, { opacity, interactive: true }).addTo(map);
+    overlay.on("click", () => setActiveLayer(id));
+
+    return {
+      id,
+      name: src.name || "Трафарет",
+      opacity,
+      boundsObj: src.bounds,
+      overlay,
+      dataUrl: src.dataUrl
+    };
+  }
+
   // Каноничная версия импорта: поддерживает replace + merge.
   // В случае конфликтов с main оставлять именно эту реализацию.
   async function applyImportPayload(payload, opts = {}) {
@@ -428,26 +453,8 @@
     const existingIds = new Set(layers.map(l => l.id));
     const importedLayers = Array.isArray(payload?.layers) ? payload.layers : [];
     for (const src of importedLayers) {
-      if (!src?.dataUrl || !src?.bounds?.sw || !src?.bounds?.ne) continue;
-
-      let id = src.id || genId();
-      while (existingIds.has(id)) id = genId();
-      existingIds.add(id);
-      await idbPutLayer(activeProjectId, id, src.dataUrl);
-
-      const bounds = deserializeBounds(src.bounds);
-      const opacity = (typeof src.opacity === "number") ? src.opacity : 0.5;
-      const overlay = L.imageOverlay(src.dataUrl, bounds, { opacity, interactive: true }).addTo(map);
-      overlay.on("click", () => setActiveLayer(id));
-
-      layers.push({
-        id,
-        name: src.name || "Трафарет",
-        opacity,
-        boundsObj: src.bounds,
-        overlay,
-        dataUrl: src.dataUrl
-      });
+      const layerObj = await createImportedOverlayLayer(src, existingIds);
+      if (layerObj) layers.push(layerObj);
     }
 
     const requestedActive = payload?.activeLayerId || "";
