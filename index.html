@@ -436,6 +436,7 @@
     };
   }
 
+  // ===== BEGIN CANONICAL IMPORT BLOCK (KEEP THIS ON MERGE) =====
   // Каноничная версия импорта: поддерживает replace + merge.
   // В случае конфликтов с main оставлять именно эту реализацию.
   async function applyImportPayloadCanonical(payload, { merge = false } = {}) {
@@ -472,6 +473,7 @@
       map.setView([c.lat, c.lng], z);
     }
   }
+  // ===== END CANONICAL IMPORT BLOCK =====
 
   document.getElementById("btnExport").onclick = async () => {
     try {
