@@ -405,6 +405,16 @@
     throw new Error("unsupported");
   }
 
+  function parseJsonInput(rawText) {
+    const text = (rawText || "").trim();
+    if (!text) throw new Error("empty");
+
+    // Поддержка JSON, вставленного в markdown-блок ```json ... ```
+    const fenced = text.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+    const normalizedText = fenced ? fenced[1].trim() : text;
+    return JSON.parse(normalizedText);
+  }
+
   async function applyImportPayload(payload) {
     zonesGroup.clearLayers();
     if (payload?.zones?.type === "FeatureCollection") addGeoJsonToZonesGroup(payload.zones);
@@ -495,11 +505,12 @@
       return;
     }
     try {
-      const payload = normalizeImportPayload(JSON.parse(geojsonBox.value));
+      const parsed = parseJsonInput(geojsonBox.value);
+      const payload = normalizeImportPayload(parsed);
       await applyImportPayload(payload);
       showToast("Импорт завершён: карта восстановлена");
     } catch (e) {
-      alert("Не могу прочитать JSON. Загрузите файл экспорта или вставьте валидный JSON.");
+      alert("Не могу прочитать JSON из поля. Проверьте формат и попробуйте снова.");
     }
   };
 
