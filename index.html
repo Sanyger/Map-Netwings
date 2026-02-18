@@ -1204,6 +1204,7 @@
 
   let layers = [];
   let activeLayerId = null;
+  let metaSaveWarnShown = false;
 
   function fileToDataURL(file) {
     return new Promise((resolve, reject) => {
@@ -1228,11 +1229,19 @@
       id: l.id,
       name: l.name,
       opacity: l.opacity,
-      bounds: l.boundsObj,
-      dataUrl: l.dataUrl || ""
+      bounds: l.boundsObj
     }));
-    localStorage.setItem(metaKey(), JSON.stringify(payload));
-    localStorage.setItem(activeKey(), activeLayerId || "");
+    try {
+      localStorage.setItem(metaKey(), JSON.stringify(payload));
+      localStorage.setItem(activeKey(), activeLayerId || "");
+      metaSaveWarnShown = false;
+    } catch (e) {
+      console.warn("[layers] meta save skipped", e);
+      if (!metaSaveWarnShown) {
+        metaSaveWarnShown = true;
+        showToast("Данные слоя слишком большие для localStorage. Скрины сохранены в IndexedDB.", 3200);
+      }
+    }
   }
 
   function getLayer(id) { return layers.find(x => x.id === id) || null; }
