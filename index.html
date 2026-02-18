@@ -299,11 +299,7 @@
     if (!pr) return;
     if (!confirm(`Удалить проект "${pr.name}"? (зоны и трафареты тоже удалятся)`)) return;
 
-    try { localStorage.removeItem(zonesKey()); } catch(e) {}
-    try { localStorage.removeItem(metaKey()); } catch(e) {}
-    try { localStorage.removeItem(activeKey()); } catch(e) {}
-
-    deleteProjectImages(activeProjectId).finally(() => {
+    clearActiveProjectStorage().finally(() => {
       projects = projects.filter(x => x.id !== activeProjectId);
       saveProjects(projects);
       activeProjectId = projects[0].id;
@@ -600,6 +596,18 @@
     };
   }
 
+  function pickFirstNonEmpty(...values) {
+    for (const value of values) {
+      if (value === null || value === undefined) continue;
+      if (typeof value === "string") {
+        if (value.trim()) return value;
+        continue;
+      }
+      return value;
+    }
+    return null;
+  }
+
   function normalizeImportPayload(parsed) {
     if (parsed?.format === "netwings-map-export-v1") return parsed;
 
@@ -624,8 +632,25 @@
         id: src?.id,
         name: src?.name || src?.title || "Трафарет",
         opacity: src?.opacity,
-        bounds: src?.bounds || src?.imageBounds || src?.overlayBounds || null,
-        dataUrl: src?.dataUrl || src?.imageDataUrl || src?.image || src?.src || ""
+        bounds: pickFirstNonEmpty(
+          src?.bounds,
+          src?.boundsObj,
+          src?.imageBounds,
+          src?.overlayBounds,
+          src?.overlay_bounds,
+          src?.image_bounds,
+          src?.bbox
+        ),
+        dataUrl: pickFirstNonEmpty(
+          src?.dataUrl,
+          src?.data_url,
+          src?.imageDataUrl,
+          src?.image,
+          src?.img,
+          src?.base64,
+          src?.src,
+          src?.url
+        ) || ""
       }));
 
       if (zones || normalizedLayers.length) {
@@ -655,17 +680,38 @@
     return JSON.parse(normalizedText);
   }
 
+  async function clearActiveProjectStorage() {
+    try { localStorage.removeItem(zonesKey()); } catch (_) {}
+    try { localStorage.removeItem(metaKey()); } catch (_) {}
+    try { localStorage.removeItem(activeKey()); } catch (_) {}
+    await deleteProjectImages(activeProjectId);
+  }
+
   async function applyImportPayload(payload) {
     zonesGroup.clearLayers();
+    await clearActiveProjectStorage();
     if (payload?.zones?.type === "FeatureCollection") addGeoJsonToZonesGroup(payload.zones);
     updateGeo();
 
     unloadAllLayersFromMap();
-    await deleteProjectImages(activeProjectId);
 
     function normalizeLayerBounds(rawBounds) {
       if (!rawBounds) return null;
       if (rawBounds?.sw && rawBounds?.ne) return rawBounds;
+
+      if (rawBounds?.southWest && rawBounds?.northEast) {
+        return {
+          sw: { lat: Number(rawBounds.southWest.lat), lng: Number(rawBounds.southWest.lng) },
+          ne: { lat: Number(rawBounds.northEast.lat), lng: Number(rawBounds.northEast.lng) }
+        };
+      }
+
+      if (Array.isArray(rawBounds?.sw) && Array.isArray(rawBounds?.ne)) {
+        return {
+          sw: { lat: Number(rawBounds.sw[0]), lng: Number(rawBounds.sw[1]) },
+          ne: { lat: Number(rawBounds.ne[0]), lng: Number(rawBounds.ne[1]) }
+        };
+      }
 
       // Leaflet bounds в виде [[southWestLat, southWestLng], [northEastLat, northEastLng]]
       if (Array.isArray(rawBounds) && rawBounds.length === 2) {
@@ -678,19 +724,71 @@
           };
         }
       }
+
+      // bbox в формате [west, south, east, north]
+      if (Array.isArray(rawBounds) && rawBounds.length === 4) {
+        return {
+          sw: { lat: Number(rawBounds[1]), lng: Number(rawBounds[0]) },
+          ne: { lat: Number(rawBounds[3]), lng: Number(rawBounds[2]) }
+        };
+      }
       return null;
     }
 
+    function isValidBounds(boundsObj) {
+      return Number.isFinite(boundsObj?.sw?.lat)
+        && Number.isFinite(boundsObj?.sw?.lng)
+        && Number.isFinite(boundsObj?.ne?.lat)
+        && Number.isFinite(boundsObj?.ne?.lng);
+    }
+
+    function normalizeImportedDataUrl(src) {
+      return pickFirstNonEmpty(
+        src?.dataUrl,
+        src?.data_url,
+        src?.imageDataUrl,
+        src?.image,
+        src?.img,
+        src?.base64,
+        src?.src,
+        src?.url
+      ) || "";
+    }
+
     const importedLayers = Array.isArray(payload?.layers) ? payload.layers : [];
+    const importReport = {
+      total: importedLayers.length,
+      imported: 0,
+      skippedNoDataUrl: 0,
+      skippedNoBounds: 0
+    };
+
     for (const src of importedLayers) {
-      const boundsObj = normalizeLayerBounds(src?.bounds);
-      if (!src?.dataUrl || !boundsObj?.sw || !boundsObj?.ne) continue;
+      const boundsObj = normalizeLayerBounds(pickFirstNonEmpty(
+        src?.bounds,
+        src?.boundsObj,
+        src?.imageBounds,
+        src?.overlayBounds,
+        src?.overlay_bounds,
+        src?.image_bounds,
+        src?.bbox
+      ));
+      const dataUrl = normalizeImportedDataUrl(src);
+      if (!dataUrl) {
+        importReport.skippedNoDataUrl += 1;
+        continue;
+      }
+      if (!isValidBounds(boundsObj)) {
+        importReport.skippedNoBounds += 1;
+        continue;
+      }
+
       const id = src.id || genId();
-      await persistLayerImage(activeProjectId, id, src.dataUrl);
+      await persistLayerImage(activeProjectId, id, dataUrl);
 
       const bounds = deserializeBounds(boundsObj);
       const opacity = (typeof src.opacity === "number") ? src.opacity : 0.5;
-      const overlay = L.imageOverlay(src.dataUrl, bounds, { opacity, interactive: true }).addTo(map);
+      const overlay = L.imageOverlay(dataUrl, bounds, { opacity, interactive: true }).addTo(map);
       overlay.on("click", (e) => {
         setActiveLayer(id);
         handleCalibrationMapPoint(e?.latlng);
@@ -702,9 +800,13 @@
         opacity,
         boundsObj,
         overlay,
-        dataUrl: src.dataUrl
+        dataUrl
       });
+      importReport.imported += 1;
     }
+
+    console.info("[import] layer import report", importReport);
+    showToast(`Импорт слоёв: ${importReport.imported}/${importReport.total}. Пропущено: без bounds ${importReport.skippedNoBounds}, без dataUrl ${importReport.skippedNoDataUrl}`, 3200);
 
     const requestedActive = payload?.activeLayerId || "";
     activeLayerId = (requestedActive && getLayer(requestedActive)) ? requestedActive : (layers[0]?.id || null);
