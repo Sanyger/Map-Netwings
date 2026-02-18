@@ -511,6 +511,14 @@
         removeZoneLayer(ownerLayer);
       }
     });
+
+    layer.on("mousedown", (e) => {
+      if (e?.originalEvent?.button !== 2) return;
+      if (e?.originalEvent) { e.originalEvent.preventDefault(); e.originalEvent.stopPropagation(); }
+      if (confirm("Удалить эту зону?")) {
+        removeZoneLayer(ownerLayer);
+      }
+    });
   }
 
   map.on("click", () => { clearSelectedZoneLayer(); });
@@ -627,7 +635,10 @@
       const bounds = deserializeBounds(src.bounds);
       const opacity = (typeof src.opacity === "number") ? src.opacity : 0.5;
       const overlay = L.imageOverlay(src.dataUrl, bounds, { opacity, interactive: true }).addTo(map);
-      overlay.on("click", () => setActiveLayer(id));
+      overlay.on("click", (e) => {
+        setActiveLayer(id);
+        handleCalibrationMapPoint(e?.latlng);
+      });
 
       layers.push({
         id,
@@ -657,7 +668,7 @@
       const text = JSON.stringify(payload, null, 2);
 
       geojsonBox.value = text;
-      localStorage.setItem(zonesKey(), JSON.stringify(payload.zones || { type: "FeatureCollection", features: [] }));
+      updateGeo();
 
       const blob = new Blob([text], { type: "application/json;charset=utf-8" });
       const url = URL.createObjectURL(blob);
@@ -1059,7 +1070,8 @@
       id: l.id,
       name: l.name,
       opacity: l.opacity,
-      bounds: l.boundsObj
+      bounds: l.boundsObj,
+      dataUrl: l.dataUrl || ""
     }));
     localStorage.setItem(metaKey(), JSON.stringify(payload));
     localStorage.setItem(activeKey(), activeLayerId || "");
@@ -1172,7 +1184,10 @@
     const savedMode = await persistLayerImage(activeProjectId, id, dataUrl);
 
     const overlay = L.imageOverlay(dataUrl, bounds, { opacity: 0.5, interactive: true }).addTo(map);
-    overlay.on("click", () => setActiveLayer(id));
+    overlay.on("click", (e) => {
+      setActiveLayer(id);
+      handleCalibrationMapPoint(e?.latlng);
+    });
 
     const layerObj = { id, name: "Трафарет", opacity: 0.5, boundsObj: serializeBounds(bounds), overlay, dataUrl };
     layers.unshift(layerObj);
@@ -1213,7 +1228,10 @@
         opacity: typeof m.opacity === "number" ? m.opacity : 0.5,
         interactive: true
       }).addTo(map);
-      overlay.on("click", () => setActiveLayer(m.id));
+      overlay.on("click", (e) => {
+        setActiveLayer(m.id);
+        handleCalibrationMapPoint(e?.latlng);
+      });
 
       layers.push({
         id: m.id,
@@ -1271,7 +1289,7 @@
     const vh = calViewport.clientHeight;
     const iw = calImg.naturalWidth || 1;
     const ih = calImg.naturalHeight || 1;
-    return Math.max(vw / iw, vh / ih);
+    return Math.min(vw / iw, vh / ih);
   }
 
   function clampPan() {
@@ -1280,11 +1298,19 @@
     const iw = (calImg.naturalWidth || 1) * calZoom;
     const ih = (calImg.naturalHeight || 1) * calZoom;
 
-    const minX = vw - iw;
-    const minY = vh - ih;
+    if (iw <= vw) {
+      calPanX = (vw - iw) / 2;
+    } else {
+      const minX = vw - iw;
+      calPanX = Math.min(0, Math.max(minX, calPanX));
+    }
 
-    calPanX = Math.min(0, Math.max(minX, calPanX));
-    calPanY = Math.min(0, Math.max(minY, calPanY));
+    if (ih <= vh) {
+      calPanY = (vh - ih) / 2;
+    } else {
+      const minY = vh - ih;
+      calPanY = Math.min(0, Math.max(minY, calPanY));
+    }
   }
 
   function setZoom(newZoom, anchorX, anchorY) {
@@ -1313,6 +1339,11 @@
     applyCalTransform();
     refreshMarkers();
   }
+
+  window.addEventListener("resize", () => {
+    if (calModal.style.display !== "block") return;
+    fitAndCenter();
+  });
 
   function openCalModal(text) {
     calHint.innerHTML = text;
@@ -1486,6 +1517,37 @@
     return Math.sqrt(dx*dx + dy*dy);
   }
 
+  function handleCalibrationMapPoint(latlng) {
+    if (!latlng || !calState.active) return;
+
+    if (calState.step === 1) {
+      calState.mapA = latlng;
+      calState.step = 2;
+
+      const l = getLayer(calState.layerId);
+      calImg.src = l.dataUrl;
+      calImg.onload = () => {
+        openCalModal("Шаг 2/4: кликни ТОЧКУ A на СКРИНЕ (можно приближать/панить).");
+        fitAndCenter();
+        refreshMarkers();
+      };
+      return;
+    }
+
+    if (calState.step === 3) {
+      calState.mapB = latlng;
+      calState.step = 4;
+
+      const l = getLayer(calState.layerId);
+      calImg.src = l.dataUrl;
+      calImg.onload = () => {
+        openCalModal("Шаг 4/4: кликни ТОЧКУ B на СКРИНЕ (после клика привязка применится).");
+        fitAndCenter();
+        refreshMarkers();
+      };
+    }
+  }
+
   function applyCalibration() {
     const l = getLayer(calState.layerId);
     if (!l) return;
@@ -1529,35 +1591,7 @@
 
   // Map clicks for calibration
   map.on("click", (e) => {
-    if (!calState.active) return;
-
-    if (calState.step === 1) {
-      calState.mapA = e.latlng;
-      calState.step = 2;
-
-      const l = getLayer(calState.layerId);
-      calImg.src = l.dataUrl;
-      calImg.onload = () => {
-        openCalModal("Шаг 2/4: кликни ТОЧКУ A на СКРИНЕ (можно приближать/панить).");
-        fitAndCenter();
-        refreshMarkers();
-      };
-      return;
-    }
-
-    if (calState.step === 3) {
-      calState.mapB = e.latlng;
-      calState.step = 4;
-
-      const l = getLayer(calState.layerId);
-      calImg.src = l.dataUrl;
-      calImg.onload = () => {
-        openCalModal("Шаг 4/4: кликни ТОЧКУ B на СКРИНЕ (после клика привязка применится).");
-        fitAndCenter();
-        refreshMarkers();
-      };
-      return;
-    }
+    handleCalibrationMapPoint(e.latlng);
   });
 
   // ========= Init =========
