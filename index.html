@@ -100,7 +100,7 @@
     <div class="muted">
       • Проекты = разные наборы слоёв (Проходимость / Плотность населения / …)<br>
       • Трафарет двигаем только привязкой (2 точки).<br>
-      • Удалить зону: Shift+клик или ПКМ по зоне.
+      • Удалить зону: Shift+клик, ПКМ или выделить ЛКМ и нажать Delete.
     </div>
     <div id="protoWarn" class="warn"></div>
 
@@ -412,6 +412,7 @@
   };
 
   let activeZoneKey = null;
+  let selectedZoneLayer = null;
 
   const zonesGroup = new L.FeatureGroup().addTo(map);
   const editOnly = new L.Control.Draw({ edit: { featureGroup: zonesGroup }, draw: false });
@@ -423,22 +424,95 @@
     return { color: z.color, weight: 2, fillColor: z.color, fillOpacity: 0.18 };
   }
 
-  function attachDeleteHandlers(layer) {
+  function getLinkedLayers(zoneLayer) {
+    const linked = zoneLayer?.__linkedLayers;
+    if (!linked) return [];
+    return Array.from(linked).filter(Boolean);
+  }
+
+  function setLayerSelectedState(layer, selected) {
+    if (!layer?.setStyle) return;
+    if (!layer.__baseStyle && layer.options) {
+      layer.__baseStyle = {
+        color: layer.options.color,
+        weight: layer.options.weight,
+        fillColor: layer.options.fillColor,
+        fillOpacity: layer.options.fillOpacity,
+        opacity: layer.options.opacity,
+        dashArray: layer.options.dashArray
+      };
+    }
+
+    const base = layer.__baseStyle || {};
+    if (!selected) {
+      layer.setStyle(base);
+      return;
+    }
+
+    const weight = Number(base.weight || 2);
+    layer.setStyle({
+      ...base,
+      weight: weight + 2,
+      fillOpacity: base.fillOpacity == null ? undefined : Math.min(base.fillOpacity + 0.08, 0.45),
+      dashArray: "8 6",
+      opacity: 1
+    });
+    if (layer.bringToFront) layer.bringToFront();
+  }
+
+  function clearSelectedZoneLayer() {
+    if (!selectedZoneLayer) return;
+    setLayerSelectedState(selectedZoneLayer, false);
+    getLinkedLayers(selectedZoneLayer).forEach(linked => setLayerSelectedState(linked, false));
+    selectedZoneLayer = null;
+  }
+
+  function selectZoneLayer(layer) {
+    if (!layer) return;
+    if (selectedZoneLayer === layer) return;
+    clearSelectedZoneLayer();
+    selectedZoneLayer = layer;
+    setLayerSelectedState(layer, true);
+    getLinkedLayers(layer).forEach(linked => setLayerSelectedState(linked, true));
+  }
+
+  function removeZoneLayer(layer) {
+    if (!layer) return;
+    if (selectedZoneLayer === layer) clearSelectedZoneLayer();
+    zonesGroup.removeLayer(layer);
+    updateGeo();
+  }
+
+  function attachDeleteHandlers(layer, ownerLayer = layer) {
+    layer.on("remove", () => {
+      if (selectedZoneLayer === ownerLayer) clearSelectedZoneLayer();
+      if (layer !== ownerLayer && ownerLayer?.__linkedLayers) ownerLayer.__linkedLayers.delete(layer);
+    });
+
     layer.on("click", (e) => {
+      if (e?.originalEvent) e.originalEvent.stopPropagation();
       if (!e?.originalEvent?.shiftKey) return;
       if (confirm("Удалить эту зону?")) {
-        zonesGroup.removeLayer(layer);
-        updateGeo();
+        removeZoneLayer(ownerLayer);
       }
+      return;
     });
+
+    layer.on("click", (e) => {
+      if (e?.originalEvent) e.originalEvent.stopPropagation();
+      if (e?.originalEvent?.shiftKey) return;
+      selectZoneLayer(ownerLayer);
+    });
+
     layer.on("contextmenu", (e) => {
       if (e?.originalEvent) { e.originalEvent.preventDefault(); e.originalEvent.stopPropagation(); }
       if (confirm("Удалить эту зону?")) {
-        zonesGroup.removeLayer(layer);
-        updateGeo();
+        removeZoneLayer(ownerLayer);
       }
     });
   }
+
+  map.on("click", () => { clearSelectedZoneLayer(); });
 
   function addGeoJsonToZonesGroup(gj) {
     const layer = L.geoJSON(gj, { style: styleForFeature });
@@ -767,9 +841,16 @@
       zonesGroup.addLayer(l);
 
       const lineLayer = L.geoJSON(line, {
-        interactive: false,
+        interactive: true,
         style: { color: z.color, weight: 5, opacity: 1 }
       }).addTo(map);
+      l.__linkedLayers = l.__linkedLayers || new Set();
+
+      lineLayer.eachLayer(lineSegment => {
+        l.__linkedLayers.add(lineSegment);
+        attachDeleteHandlers(lineSegment, l);
+      });
+
       l.on("remove", () => {
         if (map.hasLayer(lineLayer)) map.removeLayer(lineLayer);
       });
@@ -781,8 +862,18 @@
 
   // ESC
   window.addEventListener("keydown", (ev) => {
+    const targetTag = (ev.target?.tagName || "").toUpperCase();
+    const typingTarget = ev.target?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(targetTag);
+
+    if (!typingTarget && (ev.key === "Delete" || ev.key === "Backspace") && selectedZoneLayer) {
+      ev.preventDefault();
+      if (confirm("Удалить выделенную зону?")) removeZoneLayer(selectedZoneLayer);
+      return;
+    }
+
     if (ev.key === "Escape") {
       ev.preventDefault();
+      clearSelectedZoneLayer();
       streetMode = false;
       btnStreetMode.textContent = "🖊 Включить линии фасада";
       disableStreetDrawing();
