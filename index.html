@@ -516,7 +516,34 @@
 
   function addGeoJsonToZonesGroup(gj) {
     const layer = L.geoJSON(gj, { style: styleForFeature });
-    layer.eachLayer(l => { attachDeleteHandlers(l); zonesGroup.addLayer(l); });
+    layer.eachLayer(l => {
+      attachDeleteHandlers(l);
+      zonesGroup.addLayer(l);
+      rebuildStreetLineForLayer(l);
+    });
+  }
+
+  function rebuildStreetLineForLayer(ownerLayer) {
+    const sourceLine = ownerLayer?.feature?.properties?.source_line;
+    if (!sourceLine?.geometry) return;
+
+    const zoneType = ownerLayer?.feature?.properties?.zone_type;
+    const color = (ZONES[zoneType] || ZONES.low).color;
+
+    const lineLayer = L.geoJSON(sourceLine, {
+      interactive: true,
+      style: { color, weight: 5, opacity: 1 }
+    }).addTo(map);
+
+    ownerLayer.__linkedLayers = ownerLayer.__linkedLayers || new Set();
+    lineLayer.eachLayer((lineSegment) => {
+      ownerLayer.__linkedLayers.add(lineSegment);
+      attachDeleteHandlers(lineSegment, ownerLayer);
+    });
+
+    ownerLayer.on("remove", () => {
+      if (map.hasLayer(lineLayer)) map.removeLayer(lineLayer);
+    });
   }
 
   function updateGeo() {
@@ -536,7 +563,11 @@
   async function buildExportPayload() {
     const mapCenter = map.getCenter();
     const layersExport = await Promise.all(layers.map(async (l) => {
-      const dataUrl = l.dataUrl || await idbGetLayer(activeProjectId, l.id);
+      let dataUrl = l.dataUrl || "";
+      if (!dataUrl) {
+        try { dataUrl = await idbGetLayer(activeProjectId, l.id); }
+        catch (_) { dataUrl = ""; }
+      }
       return {
         id: l.id,
         name: l.name,
@@ -837,23 +868,10 @@
     polyLayer.eachLayer(l => {
       l.feature = l.feature || { type:"Feature", properties:{}, geometry:null };
       Object.assign(l.feature.properties, makeProps(activeZoneKey, w));
+      l.feature.properties.source_line = line;
       attachDeleteHandlers(l);
       zonesGroup.addLayer(l);
-
-      const lineLayer = L.geoJSON(line, {
-        interactive: true,
-        style: { color: z.color, weight: 5, opacity: 1 }
-      }).addTo(map);
-      l.__linkedLayers = l.__linkedLayers || new Set();
-
-      lineLayer.eachLayer(lineSegment => {
-        l.__linkedLayers.add(lineSegment);
-        attachDeleteHandlers(lineSegment, l);
-      });
-
-      l.on("remove", () => {
-        if (map.hasLayer(lineLayer)) map.removeLayer(lineLayer);
-      });
+      rebuildStreetLineForLayer(l);
     });
 
     updateGeo();
@@ -976,7 +994,11 @@
 
   function saveMeta() {
     const payload = layers.map(l => ({
-      id: l.id, name: l.name, opacity: l.opacity, bounds: l.boundsObj
+      id: l.id,
+      name: l.name,
+      opacity: l.opacity,
+      bounds: l.boundsObj,
+      dataUrl: l.dataUrl || null
     }));
     localStorage.setItem(metaKey(), JSON.stringify(payload));
     localStorage.setItem(activeKey(), activeLayerId || "");
@@ -1113,7 +1135,11 @@
 
     layers = [];
     for (const m of meta) {
-      const dataUrl = await idbGetLayer(activeProjectId, m.id);
+      let dataUrl = m.dataUrl || null;
+      try {
+        const idbData = await idbGetLayer(activeProjectId, m.id);
+        if (idbData) dataUrl = idbData;
+      } catch (_) {}
       if (!dataUrl) continue;
 
       const bounds = deserializeBounds(m.bounds);
