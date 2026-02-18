@@ -141,6 +141,13 @@
     </div>
 
     <div class="card">
+      <div class="label">Проверка по координатам</div>
+      <input id="coordInput" type="text" placeholder="Пример: 30.6228149999999,59.7390690000000">
+      <button class="btn primary" id="btnCheckCoords" style="margin-top:10px">🔎 Проверить</button>
+      <div class="small" id="coordResult" style="margin-top:8px">Введи координаты в формате <b>lng,lat</b>.</div>
+    </div>
+
+    <div class="card">
       <div class="label">Линии фасада (двусторонняя зона)</div>
 
       <div style="margin-top:10px">
@@ -311,12 +318,74 @@
   // ========= Zones =========
   function zonesKey(){ return `netwings_zones_geojson_v5__${activeProjectId}`; }
   const geojsonBox = document.getElementById("geojsonBox");
+  const coordInput = document.getElementById("coordInput");
+  const btnCheckCoords = document.getElementById("btnCheckCoords");
+  const coordResult = document.getElementById("coordResult");
 
   const ZONES = {
     great:  { label: "1000+/ч",    score: 100, color: "#ff2d2d" },
     normal: { label: "500–1000/ч", score: 70,  color: "#ff8a00" },
     medium: { label: "100–500/ч",  score: 40,  color: "#ffd400" },
     low:    { label: "0–100/ч",    score: 10,  color: "#39c16c" }
+  };
+
+  function parseLngLat(raw) {
+    const txt = String(raw || "").trim();
+    if (!txt) return null;
+
+    const parts = txt.split(/[\s,;]+/).filter(Boolean);
+    if (parts.length !== 2) return null;
+
+    const lng = Number(parts[0].replace(",", "."));
+    const lat = Number(parts[1].replace(",", "."));
+    if (!Number.isFinite(lng) || !Number.isFinite(lat)) return null;
+    if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+
+    return { lng, lat };
+  }
+
+  function findZoneByPoint(lat, lng) {
+    const point = turf.point([lng, lat]);
+    const hits = [];
+
+    zonesGroup.eachLayer((layer) => {
+      const gj = layer.toGeoJSON?.();
+      if (!gj?.geometry) return;
+
+      const type = gj.geometry.type;
+      if (type !== "Polygon" && type !== "MultiPolygon") return;
+
+      const inside = turf.booleanPointInPolygon(point, gj);
+      if (!inside) return;
+
+      const zoneType = gj.properties?.zone_type;
+      const zone = ZONES[zoneType] || null;
+      hits.push({
+        score: zone?.score ?? -1,
+        zoneLabel: zone?.label || gj.properties?.zone_label || "неизвестно",
+        zoneType: zoneType || "unknown"
+      });
+    });
+
+    if (!hits.length) return null;
+    hits.sort((a, b) => b.score - a.score);
+    return hits[0];
+  }
+
+  btnCheckCoords.onclick = () => {
+    const parsed = parseLngLat(coordInput.value);
+    if (!parsed) {
+      coordResult.innerHTML = "Неверный формат. Используй <b>lng,lat</b>, например: 30.6228149999999,59.7390690000000";
+      return;
+    }
+
+    const hit = findZoneByPoint(parsed.lat, parsed.lng);
+    if (!hit) {
+      coordResult.textContent = `Не нашёл проходимость для точки ${parsed.lng.toFixed(6)},${parsed.lat.toFixed(6)}.`;
+      return;
+    }
+
+    coordResult.textContent = `Проходимость: ${hit.zoneLabel} (${hit.zoneType}) для точки ${parsed.lng.toFixed(6)},${parsed.lat.toFixed(6)}.`;
   };
 
   let activeZoneKey = null;
