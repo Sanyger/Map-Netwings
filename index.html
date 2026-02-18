@@ -372,12 +372,35 @@
     return hits[0];
   }
 
+  const coordCheckLayer = L.layerGroup().addTo(map);
+  let coordCheckMarker = null;
+
+  function showCoordCheckPoint(lat, lng) {
+    const latlng = [lat, lng];
+
+    if (!coordCheckMarker) {
+      coordCheckMarker = L.circleMarker(latlng, {
+        radius: 8,
+        color: "#1f6feb",
+        weight: 3,
+        fillColor: "#7bb6ff",
+        fillOpacity: 0.45
+      }).addTo(coordCheckLayer);
+    } else {
+      coordCheckMarker.setLatLng(latlng);
+    }
+
+    map.flyTo(latlng, Math.max(map.getZoom(), 16), { duration: 0.5 });
+  }
+
   btnCheckCoords.onclick = () => {
     const parsed = parseLngLat(coordInput.value);
     if (!parsed) {
       coordResult.innerHTML = "Неверный формат. Используй <b>lng,lat</b>, например: 30.6228149999999,59.7390690000000";
       return;
     }
+
+    showCoordCheckPoint(parsed.lat, parsed.lng);
 
     const hit = findZoneByPoint(parsed.lat, parsed.lng);
     if (!hit) {
