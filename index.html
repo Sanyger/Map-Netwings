@@ -229,6 +229,7 @@
   // ========= Map =========
   const map = L.map('map').setView([59.9386, 30.3141], 12);
   L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', { maxZoom: 20 }).addTo(map);
+  map.getContainer().style.cursor = "grab";
  
 
   // ========= Projects =========
@@ -763,6 +764,12 @@
 
   function disableStreetDrawing() { try { if (streetDrawer) streetDrawer.disable(); } catch(e) {} }
 
+  function syncMapCursor() {
+    const mapEl = map.getContainer();
+    if (!mapEl) return;
+    mapEl.style.cursor = streetMode ? "crosshair" : "grab";
+  }
+
   function enableStreetDrawing() {
     disableStreetDrawing();
     if (!streetMode) return;
@@ -770,6 +777,7 @@
     if (!activeZoneKey) { showToast("Сначала выбери уровень 🔴🟠🟡🟢", 1800); return; }
     if (!streetDrawer) streetDrawer = new L.Draw.Polyline(map, { shapeOptions: {} });
     try { streetDrawer.enable(); } catch(e) {}
+    syncMapCursor();
   }
 
   btnStreetMode.onclick = () => {
@@ -783,6 +791,7 @@
       disableStreetDrawing();
       showToast("Линии выключены");
     }
+    syncMapCursor();
     refreshState();
   };
 
@@ -895,6 +904,7 @@
       streetMode = false;
       btnStreetMode.textContent = "🖊 Включить линии фасада";
       disableStreetDrawing();
+      syncMapCursor();
       refreshState();
       stopCalibrate();
       closeCalModal();
@@ -997,8 +1007,7 @@
       id: l.id,
       name: l.name,
       opacity: l.opacity,
-      bounds: l.boundsObj,
-      dataUrl: l.dataUrl || null
+      bounds: l.boundsObj
     }));
     localStorage.setItem(metaKey(), JSON.stringify(payload));
     localStorage.setItem(activeKey(), activeLayerId || "");
@@ -1162,6 +1171,7 @@
     const savedActive = localStorage.getItem(activeKey()) || "";
     activeLayerId = (savedActive && getLayer(savedActive)) ? savedActive : (layers[0]?.id || null);
     renderLayersList();
+    syncMapCursor();
   }
 
   btnAddLayers.onclick = () => { imgFiles.value = ""; imgFiles.click(); };
