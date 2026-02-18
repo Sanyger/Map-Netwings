@@ -565,10 +565,7 @@
     const mapCenter = map.getCenter();
     const layersExport = await Promise.all(layers.map(async (l) => {
       let dataUrl = l.dataUrl || "";
-      if (!dataUrl) {
-        try { dataUrl = await idbGetLayer(activeProjectId, l.id); }
-        catch (_) { dataUrl = ""; }
-      }
+      if (!dataUrl) dataUrl = await readLayerImage(activeProjectId, l.id) || "";
       return {
         id: l.id,
         name: l.name,
@@ -625,7 +622,7 @@
     for (const src of importedLayers) {
       if (!src?.dataUrl || !src?.bounds?.sw || !src?.bounds?.ne) continue;
       const id = src.id || genId();
-      await idbPutLayer(activeProjectId, id, src.dataUrl);
+      await persistLayerImage(activeProjectId, id, src.dataUrl);
 
       const bounds = deserializeBounds(src.bounds);
       const opacity = (typeof src.opacity === "number") ? src.opacity : 0.5;
@@ -915,6 +912,7 @@
   // ========= IndexedDB (images) =========
   const DB_NAME = "netwings_stencil_db_v4";
   const DB_STORE = "layers";
+  const LAYER_FALLBACK_PREFIX = "netwings_stencil_layer_data_v1__";
   function openDB() {
     return new Promise((resolve, reject) => {
       const req = indexedDB.open(DB_NAME, 1);
@@ -927,6 +925,33 @@
     });
   }
   function layerKey(projectId, layerId){ return `${projectId}:${layerId}`; }
+  function layerFallbackKey(projectId, layerId){ return `${LAYER_FALLBACK_PREFIX}${projectId}__${layerId}`; }
+
+  function saveLayerFallback(projectId, layerId, dataUrl) {
+    try {
+      localStorage.setItem(layerFallbackKey(projectId, layerId), dataUrl);
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+  function loadLayerFallback(projectId, layerId) {
+    try { return localStorage.getItem(layerFallbackKey(projectId, layerId)) || null; } catch (_) { return null; }
+  }
+  function deleteLayerFallback(projectId, layerId) {
+    try { localStorage.removeItem(layerFallbackKey(projectId, layerId)); } catch (_) {}
+  }
+  function deleteProjectFallbacks(projectId) {
+    const prefix = `${LAYER_FALLBACK_PREFIX}${projectId}__`;
+    const keys = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i) || "";
+      if (key.startsWith(prefix)) keys.push(key);
+    }
+    keys.forEach((key) => {
+      try { localStorage.removeItem(key); } catch (_) {}
+    });
+  }
 
   async function idbPutLayer(projectId, layerId, dataUrl) {
     const db = await openDB();
@@ -955,22 +980,49 @@
       tx.onerror = () => reject(tx.error);
     });
   }
+
+  async function persistLayerImage(projectId, layerId, dataUrl) {
+    try {
+      await idbPutLayer(projectId, layerId, dataUrl);
+      deleteLayerFallback(projectId, layerId);
+      return "idb";
+    } catch (_) {
+      const saved = saveLayerFallback(projectId, layerId, dataUrl);
+      return saved ? "fallback" : "none";
+    }
+  }
+  async function readLayerImage(projectId, layerId) {
+    try {
+      const idbData = await idbGetLayer(projectId, layerId);
+      if (idbData) return idbData;
+    } catch (_) {}
+    return loadLayerFallback(projectId, layerId);
+  }
+  async function deleteLayerImage(projectId, layerId) {
+    try { await idbDeleteLayer(projectId, layerId); } catch (_) {}
+    deleteLayerFallback(projectId, layerId);
+  }
+
   async function deleteProjectImages(projectId) {
-    const db = await openDB();
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(DB_STORE, "readwrite");
-      const store = tx.objectStore(DB_STORE);
-      const req = store.openCursor();
-      req.onsuccess = () => {
-        const cursor = req.result;
-        if (!cursor) return;
-        const v = cursor.value;
-        if (v?.projectId === projectId) cursor.delete();
-        cursor.continue();
-      };
-      tx.oncomplete = () => resolve(true);
-      tx.onerror = () => reject(tx.error);
-    });
+    try {
+      const db = await openDB();
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction(DB_STORE, "readwrite");
+        const store = tx.objectStore(DB_STORE);
+        const req = store.openCursor();
+        req.onsuccess = () => {
+          const cursor = req.result;
+          if (!cursor) return;
+          const v = cursor.value;
+          if (v?.projectId === projectId) cursor.delete();
+          cursor.continue();
+        };
+        tx.oncomplete = () => resolve(true);
+        tx.onerror = () => reject(tx.error);
+      });
+    } catch (_) {}
+    deleteProjectFallbacks(projectId);
+    return true;
   }
 
   // ========= Layers =========
@@ -1036,7 +1088,7 @@
     const l = layers[idx];
     map.removeLayer(l.overlay);
     layers.splice(idx, 1);
-    await idbDeleteLayer(activeProjectId, id);
+    await deleteLayerImage(activeProjectId, id);
     if (activeLayerId === id) activeLayerId = layers.length ? layers[0].id : null;
     saveMeta();
     renderLayersList();
@@ -1117,7 +1169,7 @@
   async function addLayerFromDataUrl(dataUrl) {
     const id = genId();
     const bounds = map.getBounds();
-    await idbPutLayer(activeProjectId, id, dataUrl);
+    const savedMode = await persistLayerImage(activeProjectId, id, dataUrl);
 
     const overlay = L.imageOverlay(dataUrl, bounds, { opacity: 0.5, interactive: true }).addTo(map);
     overlay.on("click", () => setActiveLayer(id));
@@ -1127,6 +1179,14 @@
     activeLayerId = id;
     saveMeta();
     renderLayersList();
+    if (savedMode === "none") {
+      showToast("Не удалось сохранить скрин локально: проверь режим браузера/квоту", 2600);
+      return;
+    }
+    if (savedMode === "fallback") {
+      showToast("Скрин сохранён в localStorage (резерв), IndexedDB недоступен", 2600);
+      return;
+    }
     showToast("Трафарет добавлен → сделай прозрачность → привяжи по 2 точкам", 2200);
   }
 
@@ -1145,10 +1205,7 @@
     layers = [];
     for (const m of meta) {
       let dataUrl = m.dataUrl || null;
-      try {
-        const idbData = await idbGetLayer(activeProjectId, m.id);
-        if (idbData) dataUrl = idbData;
-      } catch (_) {}
+      if (!dataUrl) dataUrl = await readLayerImage(activeProjectId, m.id);
       if (!dataUrl) continue;
 
       const bounds = deserializeBounds(m.bounds);
