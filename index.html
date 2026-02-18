@@ -602,6 +602,43 @@
 
   function normalizeImportPayload(parsed) {
     if (parsed?.format === "netwings-map-export-v1") return parsed;
+
+    // Старые экспорты могли быть без format и с другим именем поля для скринов.
+    const isObjectPayload = parsed && typeof parsed === "object" && !Array.isArray(parsed);
+    if (isObjectPayload) {
+      const zones = (parsed?.zones?.type === "FeatureCollection")
+        ? parsed.zones
+        : (parsed?.geojson?.type === "FeatureCollection")
+          ? parsed.geojson
+          : null;
+
+      const legacyLayersSource = Array.isArray(parsed?.layers)
+        ? parsed.layers
+        : Array.isArray(parsed?.screenshots)
+          ? parsed.screenshots
+          : Array.isArray(parsed?.stencils)
+            ? parsed.stencils
+            : [];
+
+      const normalizedLayers = legacyLayersSource.map((src) => ({
+        id: src?.id,
+        name: src?.name || src?.title || "Трафарет",
+        opacity: src?.opacity,
+        bounds: src?.bounds || src?.imageBounds || src?.overlayBounds || null,
+        dataUrl: src?.dataUrl || src?.imageDataUrl || src?.image || src?.src || ""
+      }));
+
+      if (zones || normalizedLayers.length) {
+        return {
+          format: "legacy-map-export",
+          zones: zones || { type: "FeatureCollection", features: [] },
+          layers: normalizedLayers,
+          activeLayerId: parsed?.activeLayerId || parsed?.activeLayer || null,
+          mapView: parsed?.mapView || parsed?.view || null
+        };
+      }
+    }
+
     if (parsed?.type === "FeatureCollection") {
       return { format: "legacy-geojson", zones: parsed, layers: [], activeLayerId: null };
     }
@@ -626,13 +663,32 @@
     unloadAllLayersFromMap();
     await deleteProjectImages(activeProjectId);
 
+    function normalizeLayerBounds(rawBounds) {
+      if (!rawBounds) return null;
+      if (rawBounds?.sw && rawBounds?.ne) return rawBounds;
+
+      // Leaflet bounds в виде [[southWestLat, southWestLng], [northEastLat, northEastLng]]
+      if (Array.isArray(rawBounds) && rawBounds.length === 2) {
+        const sw = rawBounds[0];
+        const ne = rawBounds[1];
+        if (Array.isArray(sw) && Array.isArray(ne) && sw.length >= 2 && ne.length >= 2) {
+          return {
+            sw: { lat: Number(sw[0]), lng: Number(sw[1]) },
+            ne: { lat: Number(ne[0]), lng: Number(ne[1]) }
+          };
+        }
+      }
+      return null;
+    }
+
     const importedLayers = Array.isArray(payload?.layers) ? payload.layers : [];
     for (const src of importedLayers) {
-      if (!src?.dataUrl || !src?.bounds?.sw || !src?.bounds?.ne) continue;
+      const boundsObj = normalizeLayerBounds(src?.bounds);
+      if (!src?.dataUrl || !boundsObj?.sw || !boundsObj?.ne) continue;
       const id = src.id || genId();
       await persistLayerImage(activeProjectId, id, src.dataUrl);
 
-      const bounds = deserializeBounds(src.bounds);
+      const bounds = deserializeBounds(boundsObj);
       const opacity = (typeof src.opacity === "number") ? src.opacity : 0.5;
       const overlay = L.imageOverlay(src.dataUrl, bounds, { opacity, interactive: true }).addTo(map);
       overlay.on("click", (e) => {
@@ -644,7 +700,7 @@
         id,
         name: src.name || "Трафарет",
         opacity,
-        boundsObj: src.bounds,
+        boundsObj,
         overlay,
         dataUrl: src.dataUrl
       });
